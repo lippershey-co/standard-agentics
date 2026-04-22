@@ -46,7 +46,6 @@ def detect_findings(text: str) -> list[dict]:
     lower_text = text.lower()
     sentences = split_sentences(text)
 
-    # Rule 1: benefit claim without visible risk language nearby
     benefit_keywords = ["improved", "effective", "efficacy", "benefit", "response", "survival"]
     benefit_hits = [s for s in sentences if any(k in s.lower() for k in benefit_keywords)]
     risk_present_anywhere = any(term in lower_text for term in RISK_TERMS)
@@ -61,7 +60,6 @@ def detect_findings(text: str) -> list[dict]:
             "review_note": "Human review required."
         })
 
-    # Rule 2: absolute / superlative promotional language
     for term in SUPERLATIVE_TERMS:
         if term in lower_text:
             findings.append({
@@ -74,7 +72,6 @@ def detect_findings(text: str) -> list[dict]:
             })
             break
 
-    # Rule 3: off-label-looking population or indication language
     for term in OFF_LABEL_TERMS:
         if term in lower_text:
             findings.append({
@@ -87,7 +84,6 @@ def detect_findings(text: str) -> list[dict]:
             })
             break
 
-    # Rule 4: missing cautionary language trigger
     caution_present = any(term in lower_text for term in ["warning", "warnings", "precaution", "precautions"])
     if not caution_present:
         findings.append({
@@ -137,9 +133,20 @@ def build_report(promo_text: str, findings: list[dict]) -> str:
     return "\n".join(report)
 
 
+def render_risk_badge(risk_level: str):
+    if risk_level == "High":
+        st.error(f"Risk level: {risk_level}")
+    elif risk_level == "Medium":
+        st.warning(f"Risk level: {risk_level}")
+    elif risk_level == "Low":
+        st.info(f"Risk level: {risk_level}")
+    else:
+        st.write(f"Risk level: {risk_level}")
+
+
 def render_finding(finding: dict):
     st.markdown(f"### {finding['title']}")
-    st.write(f"**Risk level:** {finding['risk_level']}")
+    render_risk_badge(finding["risk_level"])
     st.write(f"**Why it was flagged:** {finding['why_flagged']}")
     st.write(f"**Matched text snippet:** {finding['matched_text']}")
     st.write(f"**Rule reference:** {finding['rule_reference']}")
