@@ -97,6 +97,9 @@ def assess_readiness(text: str) -> list[dict]:
 
 
 def build_report(use_case_text: str, results: list[dict]) -> str:
+    present_count = sum(1 for r in results if r["status"] == "Present")
+    missing_count = sum(1 for r in results if r["status"] == "Missing")
+
     report = []
     report.append("EU-AI-ACT-READINESS REPORT")
     report.append("")
@@ -107,6 +110,12 @@ def build_report(use_case_text: str, results: list[dict]) -> str:
     report.append("")
     report.append("INPUT SUMMARY")
     report.append(f"Use-case description length: {len(use_case_text)} characters")
+    report.append("")
+    report.append("READINESS SUMMARY")
+    report.append(f"Readiness areas checked: {len(results)}")
+    report.append(f"Present: {present_count}")
+    report.append(f"Missing: {missing_count}")
+    report.append(f"Readiness score: {present_count}/{len(results)}")
     report.append("")
     report.append("READINESS RESULTS")
 
@@ -232,10 +241,11 @@ if run_clicked:
         )
 
         st.subheader("Assessment summary")
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         col1.metric("Readiness areas checked", len(results))
         col2.metric("Present", present_count)
         col3.metric("Missing", missing_count)
+        col4.metric("Readiness score", f"{present_count}/{len(results)}")
 
         st.subheader("Readiness results")
         for result in results:
