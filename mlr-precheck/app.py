@@ -6,6 +6,29 @@ See full prescribing information for warnings and precautions.
 """
 
 
+def build_report(promo_text: str) -> str:
+    report = []
+    report.append("MLR-PRECHECK REPORT")
+    report.append("")
+    report.append("This public demo does not yet perform a real MLR review.")
+    report.append("It does not determine compliance.")
+    report.append("Human review is required.")
+    report.append("No PDF or DOCX support is included in this public demo step.")
+    report.append("")
+    report.append("INPUT SUMMARY")
+    report.append(f"Promotional text length: {len(promo_text)} characters")
+    report.append("")
+    report.append("SCOPE LIMITS")
+    report.append("- Text-only demo")
+    report.append("- No PDF or DOCX support in this step")
+    report.append("- No determination of compliance")
+    report.append("")
+    report.append("PROMOTIONAL TEXT PREVIEW")
+    report.append(promo_text[:1200])
+    report.append("")
+    return "\n".join(report)
+
+
 st.set_page_config(page_title="MLR-PreCheck", layout="wide")
 
 if "mlr_text" not in st.session_state:
@@ -68,9 +91,18 @@ if run_clicked:
     elif len(promo_text) > 12000:
         st.error("The pasted text exceeds the 12,000 character limit.")
     else:
+        report_text = build_report(promo_text)
+
         st.success("Input accepted. MLR-PreCheck engine coming next.")
         st.info("This public demo does not yet perform a real MLR review. Human review is required.")
         st.caption("Scope limits: text-only demo, no PDF or DOCX support in this step, no determination of compliance.")
+
+        st.download_button(
+            label="Download text report",
+            data=report_text,
+            file_name="mlr_precheck_report.txt",
+            mime="text/plain"
+        )
 
         st.subheader("Input preview")
         st.write(f"Promotional text length: {len(promo_text)} characters")
