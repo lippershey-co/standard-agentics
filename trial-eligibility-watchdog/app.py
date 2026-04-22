@@ -14,6 +14,36 @@ Exclusion Criteria:
 """
 
 
+def build_report(mode: str, nct_id: str, pasted_text: str) -> str:
+    report = []
+    report.append("TRIAL-ELIGIBILITY-WATCHDOG REPORT")
+    report.append("")
+    report.append("This public demo does not yet fetch or compare live ClinicalTrials.gov records.")
+    report.append("It does not determine patient eligibility.")
+    report.append("Human review is required.")
+    report.append("No PDF support is included in this public demo.")
+    report.append("")
+    report.append("INPUT SUMMARY")
+    report.append(f"Input mode: {mode}")
+
+    if mode == "NCT ID":
+        report.append(f"NCT ID submitted: {nct_id}")
+    else:
+        report.append(f"Eligibility text length: {len(pasted_text)} characters")
+        report.append("")
+        report.append("ELIGIBILITY TEXT PREVIEW")
+        report.append(pasted_text[:1000])
+
+    report.append("")
+    report.append("SCOPE LIMITS")
+    report.append("- Single NCT ID or pasted text only")
+    report.append("- No PDF support in v1")
+    report.append("- No determination of patient eligibility")
+    report.append("")
+
+    return "\n".join(report)
+
+
 st.set_page_config(page_title="Trial-Eligibility-Watchdog", layout="wide")
 
 if "watchdog_mode" not in st.session_state:
@@ -108,9 +138,18 @@ if run_clicked:
     elif len(pasted_text) > 12000:
         st.error("The pasted text exceeds the 12,000 character limit.")
     else:
+        report_text = build_report(mode, nct_id, pasted_text)
+
         st.success("Input accepted. Trial-Eligibility-Watchdog engine coming next.")
         st.info("This public demo does not yet fetch or compare live ClinicalTrials.gov records. Human review is required.")
         st.caption("Scope limits: single NCT ID or pasted text only, no PDF support in v1, no determination of patient eligibility.")
+
+        st.download_button(
+            label="Download text report",
+            data=report_text,
+            file_name="trial_eligibility_watchdog_report.txt",
+            mime="text/plain"
+        )
 
         st.subheader("Input preview")
         if mode == "NCT ID":
