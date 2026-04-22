@@ -114,6 +114,9 @@ compare_clicked = st.button("Compare label versions")
 
 st.divider()
 
+if not compare_clicked and not text_a.strip() and not text_b.strip():
+    st.info("Start by loading the sample texts or pasting two label versions to compare.")
+
 if compare_clicked:
     if not text_a.strip() or not text_b.strip():
         st.warning("Please paste both label texts before comparing.")
