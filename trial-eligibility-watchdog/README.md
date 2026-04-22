@@ -4,10 +4,17 @@ Track and review clinical trial eligibility criteria changes.
 
 ## What it does
 
-Trial-Eligibility-Watchdog is intended to help users review trial eligibility inputs by accepting either:
+Trial-Eligibility-Watchdog accepts either:
 
 - one ClinicalTrials.gov NCT ID
 - or one pasted eligibility criteria text block
+
+The current demo supports:
+- input validation
+- sample input loading
+- reset behavior
+- input preview
+- downloadable text report
 
 ## Current public demo scope
 
@@ -20,7 +27,7 @@ Trial-Eligibility-Watchdog is intended to help users review trial eligibility in
 
 ## Current status
 
-v1 input and validation skeleton working.
+v1 interactive demo working.
 
 ## What this version does not do
 
@@ -33,7 +40,8 @@ v1 input and validation skeleton working.
 
 1. Enter an NCT ID or paste eligibility criteria text
 2. Run the check
-3. Review the input preview and validation message
+3. Review the preview and scope limits
+4. Download a text report if needed
 
 ## Not for production use
 
