@@ -4,20 +4,35 @@ Review promotional text for possible medical, legal, and regulatory risk signals
 
 ## What it does
 
-MLR-PreCheck accepts pasted promotional text and prepares it for a first-pass review workflow.
+MLR-PreCheck accepts pasted promotional text and runs a limited deterministic rules engine to surface possible first-pass review issues.
 
 The current demo supports:
 - pasted text input
 - input validation
 - sample input loading
 - reset behavior
-- input preview
+- findings display
+- rule references
 - downloadable text report
+
+## Current v1 rule scope
+
+This version checks only a narrow starter set of patterns:
+
+1. Benefit claim without visible risk language nearby
+2. Absolute or superlative promotional language
+3. Potential off-label-looking population or indication language
+4. Missing cautionary language trigger
+
+## Rule references shown in v1
+
+- FDA 21 CFR Part 202
+- EU Directive 2001/83/EC Articles 87 and 89
 
 ## Current public demo scope
 
 - English only
-- Paste text only in this first demo step
+- Paste text only in this demo step
 - No PDF or DOCX support yet
 - Maximum 12,000 characters
 - No confidential, patient, or business-sensitive data
@@ -25,20 +40,20 @@ The current demo supports:
 
 ## Current status
 
-v1 interactive demo working.
+v1 deterministic rules-engine demo working.
 
 ## What this version does not do
 
-- It does not yet perform a real MLR review
-- It does not yet flag fair-balance or off-label issues
+- It does not perform a full MLR review
 - It does not determine compliance
+- It does not make final legal or regulatory judgments
 - It is not intended for production use
 
 ## Demo flow
 
 1. Paste promotional text
 2. Run the pre-check
-3. Review the preview and scope limits
+3. Review findings, risk level, and rule references
 4. Download a text report if needed
 
 ## Not for production use
