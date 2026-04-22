@@ -45,6 +45,37 @@ def render_lines(lines: list[str]):
             st.markdown(f"- {line}")
 
 
+def build_report(lines_a, lines_b, added, removed) -> str:
+    report = []
+    report.append("ONCO-LABEL-DELTA REPORT")
+    report.append("")
+    report.append("This output is a line-level text comparison only.")
+    report.append("It does not determine regulatory significance.")
+    report.append("Human review is required.")
+    report.append("")
+    report.append("COMPARISON SUMMARY")
+    report.append(f"Lines in Text A: {len(lines_a)}")
+    report.append(f"Lines in Text B: {len(lines_b)}")
+    report.append(f"New lines: {len(added)}")
+    report.append(f"Removed lines: {len(removed)}")
+    report.append("")
+    report.append("NEW CONTENT DETECTED")
+    if added:
+        for item in added:
+            report.append(f"- {item}")
+    else:
+        report.append("No new content detected.")
+    report.append("")
+    report.append("REMOVED CONTENT DETECTED")
+    if removed:
+        for item in removed:
+            report.append(f"- {item}")
+    else:
+        report.append("No removed content detected.")
+    report.append("")
+    return "\n".join(report)
+
+
 st.set_page_config(page_title="Onco-Label-Delta", layout="wide")
 
 if "text_a" not in st.session_state:
@@ -124,9 +155,17 @@ if compare_clicked:
         st.error("One or both text inputs exceed the 12,000 character limit.")
     else:
         lines_a, lines_b, added, removed = compare_lines(text_a, text_b)
+        report_text = build_report(lines_a, lines_b, added, removed)
 
         st.success("Comparison complete.")
         st.info("This output is a line-level text comparison only. It does not determine regulatory significance. Human review is required.")
+
+        st.download_button(
+            label="Download text report",
+            data=report_text,
+            file_name="onco_label_delta_report.txt",
+            mime="text/plain"
+        )
 
         st.subheader("Comparison summary")
         metric1, metric2, metric3, metric4 = st.columns(4)
