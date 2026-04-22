@@ -43,7 +43,7 @@ with st.expander("Public demo policy", expanded=False):
 - Human review required
     """)
 
-top_col1, top_col2, top_col3 = st.columns([1, 1, 3])
+top_col1, top_col2, top_col3, top_col4 = st.columns([1, 1, 1, 3])
 
 with top_col1:
     if st.button("Load sample NCT ID"):
@@ -60,7 +60,14 @@ with top_col2:
         st.rerun()
 
 with top_col3:
-    st.caption("Use a sample NCT ID or sample eligibility criteria for a quick demo.")
+    if st.button("Reset"):
+        st.session_state.watchdog_mode = "NCT ID"
+        st.session_state.watchdog_nct_id = ""
+        st.session_state.watchdog_text = ""
+        st.rerun()
+
+with top_col4:
+    st.caption("Use a sample NCT ID or sample eligibility criteria for a quick demo, or reset the form.")
 
 mode = st.radio(
     "Choose input type",
@@ -91,7 +98,7 @@ run_clicked = st.button("Run check")
 st.divider()
 
 if not run_clicked and not nct_id.strip() and not pasted_text.strip():
-    st.info("Start by entering an NCT ID or pasting eligibility criteria text.")
+    st.info("Start by loading a sample NCT ID, loading sample criteria, or entering your own input.")
 
 if run_clicked:
     if mode == "NCT ID" and not nct_id.strip():
@@ -103,6 +110,7 @@ if run_clicked:
     else:
         st.success("Input accepted. Trial-Eligibility-Watchdog engine coming next.")
         st.info("This public demo does not yet fetch or compare live ClinicalTrials.gov records. Human review is required.")
+        st.caption("Scope limits: single NCT ID or pasted text only, no PDF support in v1, no determination of patient eligibility.")
 
         st.subheader("Input preview")
         if mode == "NCT ID":
