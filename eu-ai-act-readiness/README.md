@@ -14,6 +14,7 @@ The current demo supports:
 - readiness results display
 - reference areas
 - downloadable text report
+- Present / Partial / Missing scoring
 
 ## Current v1 checklist scope
 
@@ -28,6 +29,17 @@ This version checks these 9 readiness areas:
 7. Accuracy / robustness / validation / monitoring
 8. Quality management / governance process
 9. Post-market monitoring / incident handling
+
+## Scoring model
+
+- **Present** = strong evidence detected
+- **Partial** = weaker or indirect evidence detected
+- **Missing** = no clear evidence detected
+
+Readiness score:
+- Present = 1.0
+- Partial = 0.5
+- Missing = 0.0
 
 ## Reference areas shown in v1
 
