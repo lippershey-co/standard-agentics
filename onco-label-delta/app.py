@@ -59,7 +59,7 @@ with st.expander("How to use", expanded=True):
     st.markdown("""
 1. Paste an earlier label version into **Label Text A**
 2. Paste a newer label version into **Label Text B**
-3. Click **Compare label versions**
+3. Click **Run comparison**
 4. Review new and removed content
     """)
 
@@ -76,7 +76,7 @@ with st.expander("Public demo policy", expanded=False):
 top_col1, top_col2, top_col3 = st.columns([1, 1, 3])
 
 with top_col1:
-    if st.button("Load sample texts"):
+    if st.button("Load sample comparison"):
         st.session_state.text_a = SAMPLE_TEXT_A
         st.session_state.text_b = SAMPLE_TEXT_B
         st.rerun()
@@ -110,7 +110,7 @@ with col2:
     )
     st.caption(f"Characters: {len(text_b)}/12000")
 
-compare_clicked = st.button("Compare label versions")
+compare_clicked = st.button("Run comparison")
 
 st.divider()
 
