@@ -6,6 +6,29 @@ Outputs are reviewed by humans before any enrollment decision is made.
 """
 
 
+def build_report(use_case_text: str) -> str:
+    report = []
+    report.append("EU-AI-ACT-READINESS REPORT")
+    report.append("")
+    report.append("This public demo does not yet perform a real readiness assessment.")
+    report.append("It does not make a legal determination.")
+    report.append("Human review is required.")
+    report.append("No PDF or DOCX support is included in this public demo step.")
+    report.append("")
+    report.append("INPUT SUMMARY")
+    report.append(f"Use-case description length: {len(use_case_text)} characters")
+    report.append("")
+    report.append("SCOPE LIMITS")
+    report.append("- Text-only demo")
+    report.append("- No PDF or DOCX support in this step")
+    report.append("- No legal determination")
+    report.append("")
+    report.append("USE-CASE PREVIEW")
+    report.append(use_case_text[:1200])
+    report.append("")
+    return "\n".join(report)
+
+
 st.set_page_config(page_title="EU-AI-Act-Readiness", layout="wide")
 
 if "eu_ai_text" not in st.session_state:
@@ -68,9 +91,18 @@ if run_clicked:
     elif len(use_case_text) > 12000:
         st.error("The pasted text exceeds the 12,000 character limit.")
     else:
+        report_text = build_report(use_case_text)
+
         st.success("Input accepted. EU-AI-Act-Readiness engine coming next.")
         st.info("This public demo does not yet perform a real readiness assessment. Human review is required.")
         st.caption("Scope limits: text-only demo, no PDF or DOCX support in this step, no legal determination.")
+
+        st.download_button(
+            label="Download text report",
+            data=report_text,
+            file_name="eu_ai_act_readiness_report.txt",
+            mime="text/plain"
+        )
 
         st.subheader("Input preview")
         st.write(f"Use-case description length: {len(use_case_text)} characters")
