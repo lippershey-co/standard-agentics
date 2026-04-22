@@ -20,6 +20,8 @@ CHECKS = [
         "weak_keywords": [
             "clinician review", "medical review", "review by team", "sign off", "sign-off"
         ],
+        "next_action_missing": "Document who can review, override, or stop the system, and define a formal human-in-the-loop approval path.",
+        "next_action_partial": "Strengthen the oversight description by naming the reviewer role, override authority, and escalation path."
     },
     {
         "area": "Risk management",
@@ -32,6 +34,8 @@ CHECKS = [
             "mitigates risks", "identify risks", "identified risks", "foreseeable risks",
             "risk mitigation", "safety risk"
         ],
+        "next_action_missing": "Add a formal risk management description covering identified risks, mitigation measures, and residual-risk review.",
+        "next_action_partial": "Expand the text to reference a named risk management process, not just isolated mitigation language."
     },
     {
         "area": "Data governance",
@@ -44,6 +48,8 @@ CHECKS = [
             "clinical notes", "structured patient data", "ehr", "electronic health records",
             "bias mitigation", "bias detection", "representative", "data source"
         ],
+        "next_action_missing": "Describe the data sources, quality checks, representativeness, and bias controls used in the workflow.",
+        "next_action_partial": "Add explicit wording on data quality, provenance, representativeness, and bias testing."
     },
     {
         "area": "Technical documentation",
@@ -55,6 +61,8 @@ CHECKS = [
         "weak_keywords": [
             "documentation", "model version", "versioning", "specification", "audit-ready"
         ],
+        "next_action_missing": "Add a technical documentation summary covering architecture, model versions, intended use, and key system specifications.",
+        "next_action_partial": "Expand the documentation wording into a more explicit technical documentation statement."
     },
     {
         "area": "Logging / record-keeping",
@@ -66,6 +74,8 @@ CHECKS = [
         "weak_keywords": [
             "logging", "logs", "record retention", "trace logs"
         ],
+        "next_action_missing": "Document what events are logged, how records are retained, and how traceability is maintained.",
+        "next_action_partial": "Specify which actions, outputs, or model events are logged and retained."
     },
     {
         "area": "Transparency / instructions for use",
@@ -77,6 +87,8 @@ CHECKS = [
         "weak_keywords": [
             "transparency", "explainability", "interpretability", "user instructions"
         ],
+        "next_action_missing": "Add clear intended-use language, user guidance, limitations, and warnings for deployers or reviewers.",
+        "next_action_partial": "Make the transparency language more explicit by describing intended use and operational limitations."
     },
     {
         "area": "Accuracy / robustness / validation / monitoring",
@@ -90,6 +102,8 @@ CHECKS = [
             "stress tests", "stress testing", "real-world evidence", "rwe",
             "toxicity reports", "performance", "monitor"
         ],
+        "next_action_missing": "Add evidence of validation, monitoring, robustness checks, and ongoing performance review.",
+        "next_action_partial": "Clarify how accuracy, monitoring, validation, or drift detection are actually performed."
     },
     {
         "area": "Quality management / governance process",
@@ -101,6 +115,8 @@ CHECKS = [
         "weak_keywords": [
             "governance", "digital governance", "sop", "committee", "oversight team"
         ],
+        "next_action_missing": "Describe the governance structure, approval workflow, change control, or quality management process.",
+        "next_action_partial": "Add more explicit governance or QMS language instead of only naming a team or committee."
     },
     {
         "area": "Post-market monitoring / incident handling",
@@ -113,6 +129,8 @@ CHECKS = [
             "incident escalation", "post-market surveillance", "pms", "post market surveillance",
             "feedback loop", "surveillance loop"
         ],
+        "next_action_missing": "Add a post-market monitoring or incident-handling description, including escalation and corrective-action language.",
+        "next_action_partial": "Strengthen the incident or surveillance language by making the monitoring and escalation process explicit."
     },
 ]
 
@@ -159,6 +177,7 @@ def assess_readiness(text: str) -> list[dict]:
                 "why_flagged": f'Evidence of this readiness area was detected via strong keyword match: "{strong_kw}".',
                 "matched_text": extract_snippet_from_normalized(text, strong_start, strong_end),
                 "reference": check["reference"],
+                "next_action": "Documented evidence appears present. Confirm the process is operational and retained in formal records.",
                 "review_note": "Human review required."
             })
         elif weak_kw:
@@ -169,6 +188,7 @@ def assess_readiness(text: str) -> list[dict]:
                 "why_flagged": f'Possible evidence of this readiness area was detected via weaker keyword match: "{weak_kw}".',
                 "matched_text": extract_snippet_from_normalized(text, weak_start, weak_end),
                 "reference": check["reference"],
+                "next_action": check["next_action_partial"],
                 "review_note": "Human review required."
             })
         else:
@@ -179,6 +199,7 @@ def assess_readiness(text: str) -> list[dict]:
                 "why_flagged": "No clear evidence of this readiness area was detected in the submitted text.",
                 "matched_text": "",
                 "reference": check["reference"],
+                "next_action": check["next_action_missing"],
                 "review_note": "Human review required."
             })
 
@@ -220,6 +241,7 @@ def build_report(use_case_text: str, results: list[dict]) -> str:
         else:
             report.append("   Matched text: None detected")
         report.append(f"   Reference area: {result['reference']}")
+        report.append(f"   Recommended next action: {result['next_action']}")
         report.append(f"   Review note: {result['review_note']}")
         report.append("")
 
@@ -252,6 +274,7 @@ def render_result(result: dict):
     else:
         st.write("**Matched text snippet:** None detected")
     st.write(f"**Reference area:** {result['reference']}")
+    st.write(f"**Recommended next action:** {result['next_action']}")
     st.write(f"**Review note:** {result['review_note']}")
 
 
@@ -267,7 +290,7 @@ with st.expander("How to use", expanded=True):
     st.markdown("""
 1. Paste an AI use-case description into the input box
 2. Click **Run readiness check**
-3. Review the readiness results and reference areas
+3. Review the readiness results, reference areas, and next actions
     """)
 
 with st.expander("Public demo policy", expanded=False):
