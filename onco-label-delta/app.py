@@ -100,6 +100,7 @@ if compare_clicked:
         lines_a, lines_b, added, removed = compare_lines(text_a, text_b)
 
         st.success("Comparison complete.")
+        st.info("This output is a line-level text comparison only. It does not determine regulatory significance. Human review is required.")
 
         st.subheader("Comparison summary")
         metric1, metric2, metric3, metric4 = st.columns(4)
