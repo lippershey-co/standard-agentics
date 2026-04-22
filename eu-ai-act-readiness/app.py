@@ -1,6 +1,15 @@
 import streamlit as st
 
+SAMPLE_USE_CASE = """We use an AI system to screen oncology trial candidates based on structured patient data and clinical notes.
+The system ranks likely eligible patients for manual review by the study team.
+Outputs are reviewed by humans before any enrollment decision is made.
+"""
+
+
 st.set_page_config(page_title="EU-AI-Act-Readiness", layout="wide")
+
+if "eu_ai_text" not in st.session_state:
+    st.session_state.eu_ai_text = ""
 
 st.title("EU-AI-Act-Readiness")
 st.caption("Assess an AI use case against a limited public-demo readiness workflow.")
@@ -23,10 +32,26 @@ with st.expander("Public demo policy", expanded=False):
 - Human review required
     """)
 
+top_col1, top_col2, top_col3 = st.columns([1, 1, 3])
+
+with top_col1:
+    if st.button("Load sample use case"):
+        st.session_state.eu_ai_text = SAMPLE_USE_CASE
+        st.rerun()
+
+with top_col2:
+    if st.button("Reset"):
+        st.session_state.eu_ai_text = ""
+        st.rerun()
+
+with top_col3:
+    st.caption("Use the sample use case for a quick demo, or reset the form.")
+
 use_case_text = st.text_area(
     "AI use-case description",
     height=320,
-    placeholder="Describe the AI use case here..."
+    placeholder="Describe the AI use case here...",
+    key="eu_ai_text"
 )
 st.caption(f"Characters: {len(use_case_text)}/12000")
 
@@ -35,7 +60,7 @@ run_clicked = st.button("Run readiness check")
 st.divider()
 
 if not run_clicked and not use_case_text.strip():
-    st.info("Start by pasting an AI use-case description to evaluate.")
+    st.info("Start by loading the sample use case or pasting an AI use-case description to evaluate.")
 
 if run_clicked:
     if not use_case_text.strip():
