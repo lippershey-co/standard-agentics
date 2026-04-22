@@ -2,6 +2,21 @@ import streamlit as st
 from difflib import ndiff
 
 
+SAMPLE_TEXT_A = """INDICATIONS AND USAGE
+Drug X is indicated for adult patients with advanced solid tumors.
+WARNINGS AND PRECAUTIONS
+Monitor liver function during treatment.
+"""
+
+SAMPLE_TEXT_B = """INDICATIONS AND USAGE
+Drug X is indicated for adult patients with advanced or metastatic solid tumors.
+WARNINGS AND PRECAUTIONS
+Monitor liver function during treatment.
+ADVERSE REACTIONS
+The most common adverse reactions were fatigue and nausea.
+"""
+
+
 def normalize_lines(text: str) -> list[str]:
     lines = []
     for line in text.splitlines():
@@ -24,6 +39,11 @@ def compare_lines(text_a: str, text_b: str):
 
 st.set_page_config(page_title="Onco-Label-Delta", layout="wide")
 
+if "text_a" not in st.session_state:
+    st.session_state.text_a = ""
+if "text_b" not in st.session_state:
+    st.session_state.text_b = ""
+
 st.title("Onco-Label-Delta")
 st.caption("Compare two oncology label texts and surface meaningful line-level changes.")
 
@@ -37,13 +57,24 @@ with st.expander("Public demo policy", expanded=False):
 - Human review required
     """)
 
+top_col1, top_col2 = st.columns([1, 3])
+
+with top_col1:
+    if st.button("Load sample texts"):
+        st.session_state.text_a = SAMPLE_TEXT_A
+        st.session_state.text_b = SAMPLE_TEXT_B
+
+with top_col2:
+    st.caption("Use the sample texts for a quick demo.")
+
 col1, col2 = st.columns(2)
 
 with col1:
     text_a = st.text_area(
         "Label Text A",
         height=300,
-        placeholder="Paste the first label version here..."
+        placeholder="Paste the first label version here...",
+        key="text_a"
     )
     st.caption(f"Characters: {len(text_a)}/12000")
 
@@ -51,7 +82,8 @@ with col2:
     text_b = st.text_area(
         "Label Text B",
         height=300,
-        placeholder="Paste the second label version here..."
+        placeholder="Paste the second label version here...",
+        key="text_b"
     )
     st.caption(f"Characters: {len(text_b)}/12000")
 
