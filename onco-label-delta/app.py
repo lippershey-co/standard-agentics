@@ -65,15 +65,22 @@ with st.expander("Public demo policy", expanded=False):
 - Human review required
     """)
 
-top_col1, top_col2 = st.columns([1, 3])
+top_col1, top_col2, top_col3 = st.columns([1, 1, 3])
 
 with top_col1:
     if st.button("Load sample texts"):
         st.session_state.text_a = SAMPLE_TEXT_A
         st.session_state.text_b = SAMPLE_TEXT_B
+        st.rerun()
 
 with top_col2:
-    st.caption("Use the sample texts for a quick demo.")
+    if st.button("Reset"):
+        st.session_state.text_a = ""
+        st.session_state.text_b = ""
+        st.rerun()
+
+with top_col3:
+    st.caption("Use the sample texts for a quick demo, or reset both fields.")
 
 col1, col2 = st.columns(2)
 
