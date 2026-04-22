@@ -37,6 +37,14 @@ def compare_lines(text_a: str, text_b: str):
     return lines_a, lines_b, added, removed
 
 
+def render_lines(lines: list[str]):
+    if not lines:
+        st.info("No lines to display.")
+    else:
+        for line in lines:
+            st.markdown(f"- {line}")
+
+
 st.set_page_config(page_title="Onco-Label-Delta", layout="wide")
 
 if "text_a" not in st.session_state:
@@ -111,23 +119,21 @@ if compare_clicked:
 
         st.subheader("New content detected")
         if added:
-            for item in added:
-                st.markdown(f"- {item}")
+            render_lines(added)
         else:
             st.info("No new content detected.")
 
         st.subheader("Removed content detected")
         if removed:
-            for item in removed:
-                st.markdown(f"- {item}")
+            render_lines(removed)
         else:
             st.info("No removed content detected.")
 
         with st.expander("Preview normalized Text A"):
-            st.write(lines_a)
+            render_lines(lines_a)
 
         with st.expander("Preview normalized Text B"):
-            st.write(lines_b)
+            render_lines(lines_b)
 
 st.divider()
 st.markdown("**Run locally via GitHub**")
