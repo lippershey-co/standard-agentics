@@ -9,8 +9,9 @@ Onco-Label-Delta compares two pasted label text versions and highlights:
 - new content detected
 - removed content detected
 - a simple comparison summary
+- a downloadable text report
 
-## Public demo scope
+## Current public demo scope
 
 - English only
 - Paste text only in v1
@@ -22,6 +23,20 @@ Onco-Label-Delta compares two pasted label text versions and highlights:
 ## Current status
 
 v1 local demo working.
+
+## What this version does not do
+
+- It does not determine regulatory significance
+- It does not assess materiality
+- It does not support PDF input in the public demo
+- It is not intended for production use
+
+## Demo flow
+
+1. Paste two label versions
+2. Run comparison
+3. Review new and removed content
+4. Download a text report if needed
 
 ## Not for production use
 
