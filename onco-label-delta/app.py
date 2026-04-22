@@ -145,3 +145,4 @@ if compare_clicked:
 st.divider()
 st.markdown("**Run locally via GitHub**")
 st.markdown("For private or extended use, run the tool locally from the Standard Agentics repository.")
+st.markdown("[Open the Standard Agentics repository](https://github.com/lippershey-co/standard-agentics)")
