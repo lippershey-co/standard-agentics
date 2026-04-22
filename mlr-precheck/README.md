@@ -9,8 +9,10 @@ MLR-PreCheck accepts pasted promotional text and prepares it for a first-pass re
 The current demo supports:
 - pasted text input
 - input validation
-- empty-state guidance
+- sample input loading
+- reset behavior
 - input preview
+- downloadable text report
 
 ## Current public demo scope
 
@@ -23,7 +25,7 @@ The current demo supports:
 
 ## Current status
 
-v1 input and validation skeleton working.
+v1 interactive demo working.
 
 ## What this version does not do
 
@@ -36,7 +38,8 @@ v1 input and validation skeleton working.
 
 1. Paste promotional text
 2. Run the pre-check
-3. Review the input preview and scope limits
+3. Review the preview and scope limits
+4. Download a text report if needed
 
 ## Not for production use
 
