@@ -52,6 +52,7 @@ def build_report(lines_a, lines_b, added, removed) -> str:
     report.append("This output is a line-level text comparison only.")
     report.append("It does not determine regulatory significance.")
     report.append("Human review is required.")
+    report.append("PDF support is not included in this public demo.")
     report.append("")
     report.append("COMPARISON SUMMARY")
     report.append(f"Lines in Text A: {len(lines_a)}")
@@ -159,6 +160,7 @@ if compare_clicked:
 
         st.success("Comparison complete.")
         st.info("This output is a line-level text comparison only. It does not determine regulatory significance. Human review is required.")
+        st.caption("Scope limits: text-only demo, no PDF support in v1, no assessment of regulatory materiality.")
 
         st.download_button(
             label="Download text report",
