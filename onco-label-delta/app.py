@@ -25,7 +25,7 @@ def compare_lines(text_a: str, text_b: str):
 st.set_page_config(page_title="Onco-Label-Delta", layout="wide")
 
 st.title("Onco-Label-Delta")
-st.caption("Compare two oncology label texts and highlight meaningful changes.")
+st.caption("Compare two oncology label texts and surface meaningful line-level changes.")
 
 with st.expander("Public demo policy", expanded=False):
     st.markdown("""
@@ -69,25 +69,26 @@ if compare_clicked:
 
         st.success("Comparison complete.")
 
+        st.subheader("Comparison summary")
         metric1, metric2, metric3, metric4 = st.columns(4)
         metric1.metric("Lines in Text A", len(lines_a))
         metric2.metric("Lines in Text B", len(lines_b))
-        metric3.metric("Added lines", len(added))
+        metric3.metric("New lines", len(added))
         metric4.metric("Removed lines", len(removed))
 
-        st.subheader("Added lines")
+        st.subheader("New content detected")
         if added:
             for item in added:
                 st.markdown(f"- {item}")
         else:
-            st.info("No added lines detected.")
+            st.info("No new content detected.")
 
-        st.subheader("Removed lines")
+        st.subheader("Removed content detected")
         if removed:
             for item in removed:
                 st.markdown(f"- {item}")
         else:
-            st.info("No removed lines detected.")
+            st.info("No removed content detected.")
 
         with st.expander("Preview normalized Text A"):
             st.write(lines_a)
