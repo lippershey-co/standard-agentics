@@ -1,6 +1,15 @@
 import streamlit as st
 
+SAMPLE_PROMO_TEXT = """Drug X significantly improved progression-free survival in adult patients with advanced solid tumors.
+Treatment was generally well tolerated in the study population.
+See full prescribing information for warnings and precautions.
+"""
+
+
 st.set_page_config(page_title="MLR-PreCheck", layout="wide")
+
+if "mlr_text" not in st.session_state:
+    st.session_state.mlr_text = ""
 
 st.title("MLR-PreCheck")
 st.caption("Review promotional text for possible medical, legal, and regulatory risk signals.")
@@ -23,10 +32,26 @@ with st.expander("Public demo policy", expanded=False):
 - Human review required
     """)
 
+top_col1, top_col2, top_col3 = st.columns([1, 1, 3])
+
+with top_col1:
+    if st.button("Load sample text"):
+        st.session_state.mlr_text = SAMPLE_PROMO_TEXT
+        st.rerun()
+
+with top_col2:
+    if st.button("Reset"):
+        st.session_state.mlr_text = ""
+        st.rerun()
+
+with top_col3:
+    st.caption("Use the sample promotional text for a quick demo, or reset the form.")
+
 promo_text = st.text_area(
     "Promotional text",
     height=320,
-    placeholder="Paste promotional copy here..."
+    placeholder="Paste promotional copy here...",
+    key="mlr_text"
 )
 st.caption(f"Characters: {len(promo_text)}/12000")
 
@@ -35,7 +60,7 @@ run_clicked = st.button("Run pre-check")
 st.divider()
 
 if not run_clicked and not promo_text.strip():
-    st.info("Start by pasting promotional text to evaluate.")
+    st.info("Start by loading the sample text or pasting promotional text to evaluate.")
 
 if run_clicked:
     if not promo_text.strip():
