@@ -55,6 +55,14 @@ if "text_b" not in st.session_state:
 st.title("Onco-Label-Delta")
 st.caption("Compare two oncology label texts and surface meaningful line-level changes.")
 
+with st.expander("How to use", expanded=True):
+    st.markdown("""
+1. Paste an earlier label version into **Label Text A**
+2. Paste a newer label version into **Label Text B**
+3. Click **Compare label versions**
+4. Review new and removed content
+    """)
+
 with st.expander("Public demo policy", expanded=False):
     st.markdown("""
 - Testing only
