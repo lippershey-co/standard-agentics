@@ -1,3 +1,4 @@
+import re
 import streamlit as st
 
 SAMPLE_USE_CASE = """We use an AI system to screen oncology trial candidates based on structured patient data and clinical notes.
@@ -12,74 +13,161 @@ CHECKS = [
     {
         "area": "Human oversight",
         "reference": "EU AI Act — Human Oversight",
-        "keywords": ["human review", "human oversight", "manual review", "reviewed by humans", "override", "escalation"]
+        "strong_keywords": [
+            "human oversight", "human review", "manual review", "reviewed by humans",
+            "human-in-the-loop", "human in the loop", "hitl", "override", "manual sign-off"
+        ],
+        "weak_keywords": [
+            "clinician review", "medical review", "review by team", "sign off", "sign-off"
+        ],
     },
     {
         "area": "Risk management",
         "reference": "EU AI Act — Risk Management",
-        "keywords": ["risk management", "risk assessment", "hazard", "mitigation", "control measure", "risk register"]
+        "strong_keywords": [
+            "risk management", "risk assessment", "risk register", "residual risk",
+            "control measure", "mitigation measure", "hazard analysis"
+        ],
+        "weak_keywords": [
+            "mitigates risks", "identify risks", "identified risks", "foreseeable risks",
+            "risk mitigation", "safety risk"
+        ],
     },
     {
         "area": "Data governance",
         "reference": "EU AI Act — Data Governance",
-        "keywords": ["data source", "data quality", "data governance", "representative data", "training data", "clinical notes", "structured patient data"]
+        "strong_keywords": [
+            "data governance", "data quality", "training data", "validation data",
+            "test data", "representative data", "data provenance"
+        ],
+        "weak_keywords": [
+            "clinical notes", "structured patient data", "ehr", "electronic health records",
+            "bias mitigation", "bias detection", "representative", "data source"
+        ],
     },
     {
         "area": "Technical documentation",
         "reference": "EU AI Act — Technical Documentation",
-        "keywords": ["documentation", "technical documentation", "model version", "versioning", "system description", "specification"]
+        "strong_keywords": [
+            "technical documentation", "annex iv", "system architecture",
+            "model specification", "system description", "documentation package"
+        ],
+        "weak_keywords": [
+            "documentation", "model version", "versioning", "specification", "audit-ready"
+        ],
     },
     {
         "area": "Logging / record-keeping",
         "reference": "EU AI Act — Logging / Record-Keeping",
-        "keywords": ["log", "logs", "logging", "audit trail", "audit logs", "record-keeping", "traceability"]
+        "strong_keywords": [
+            "audit trail", "audit log", "audit logs", "record-keeping",
+            "traceability", "tamper-proof log", "event logs"
+        ],
+        "weak_keywords": [
+            "logging", "logs", "record retention", "trace logs"
+        ],
     },
     {
         "area": "Transparency / instructions for use",
         "reference": "EU AI Act — Transparency / Instructions for Use",
-        "keywords": ["instructions", "intended use", "limitation", "limitations", "user guidance", "warning to users", "appropriate use"]
+        "strong_keywords": [
+            "instructions for use", "intended use", "user guidance",
+            "appropriate use", "limitations", "warning to users"
+        ],
+        "weak_keywords": [
+            "transparency", "explainability", "interpretability", "user instructions"
+        ],
     },
     {
         "area": "Accuracy / robustness / validation / monitoring",
         "reference": "EU AI Act — Accuracy, Robustness, Validation, Monitoring",
-        "keywords": ["accuracy", "robustness", "validation", "monitoring", "performance review", "benchmark", "test set", "drift"]
+        "strong_keywords": [
+            "accuracy", "robustness", "validation", "monitoring",
+            "performance review", "drift detection", "model drift",
+            "adversarial testing", "benchmarking"
+        ],
+        "weak_keywords": [
+            "stress tests", "stress testing", "real-world evidence", "rwe",
+            "toxicity reports", "performance", "monitor"
+        ],
     },
     {
         "area": "Quality management / governance process",
         "reference": "EU AI Act — Quality Management / Governance Process",
-        "keywords": ["quality management", "governance", "approval process", "sop", "change management", "governance team", "control process"]
+        "strong_keywords": [
+            "quality management system", "qms", "governance committee",
+            "change management", "approval process", "control process"
+        ],
+        "weak_keywords": [
+            "governance", "digital governance", "sop", "committee", "oversight team"
+        ],
     },
     {
         "area": "Post-market monitoring / incident handling",
         "reference": "EU AI Act — Post-Market Monitoring / Incident Handling",
-        "keywords": ["incident", "incident handling", "post-market", "feedback loop", "monitoring after deployment", "escalation", "corrective action"]
+        "strong_keywords": [
+            "post-market monitoring", "post market monitoring", "incident handling",
+            "serious incident", "corrective action", "supervisory authority"
+        ],
+        "weak_keywords": [
+            "incident escalation", "post-market surveillance", "pms", "post market surveillance",
+            "feedback loop", "surveillance loop"
+        ],
     },
 ]
 
 
-def find_match_snippet(text: str, keywords: list[str], window: int = 180) -> str:
-    lower_text = text.lower()
+def normalize_text(text: str) -> str:
+    text = text.lower()
+    text = text.replace("-", " ")
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def find_keyword_match(text: str, keywords: list[str]):
+    normalized = normalize_text(text)
     for keyword in keywords:
-        idx = lower_text.find(keyword.lower())
-        if idx != -1:
-            start = max(0, idx - 40)
-            end = min(len(text), idx + window)
-            return text[start:end].strip()
-    return ""
+        normalized_keyword = normalize_text(keyword)
+        pattern = r"\b" + re.escape(normalized_keyword) + r"\b"
+        match = re.search(pattern, normalized)
+        if match:
+            return keyword, match.start(), match.end()
+    return None, None, None
+
+
+def extract_snippet_from_normalized(text: str, start_idx: int, end_idx: int, window: int = 120) -> str:
+    normalized = normalize_text(text)
+    if start_idx is None:
+        return ""
+    start = max(0, start_idx - 40)
+    end = min(len(normalized), end_idx + window)
+    return normalized[start:end].strip()
 
 
 def assess_readiness(text: str) -> list[dict]:
     results = []
-    lower_text = text.lower()
 
     for check in CHECKS:
-        matched_keywords = [kw for kw in check["keywords"] if kw.lower() in lower_text]
-        if matched_keywords:
+        strong_kw, strong_start, strong_end = find_keyword_match(text, check["strong_keywords"])
+        weak_kw, weak_start, weak_end = find_keyword_match(text, check["weak_keywords"])
+
+        if strong_kw:
             results.append({
                 "area": check["area"],
                 "status": "Present",
-                "why_flagged": f"Evidence of this readiness area was detected in the submitted text via keyword(s): {', '.join(matched_keywords[:3])}.",
-                "matched_text": find_match_snippet(text, check["keywords"]),
+                "score_value": 1.0,
+                "why_flagged": f'Evidence of this readiness area was detected via strong keyword match: "{strong_kw}".',
+                "matched_text": extract_snippet_from_normalized(text, strong_start, strong_end),
+                "reference": check["reference"],
+                "review_note": "Human review required."
+            })
+        elif weak_kw:
+            results.append({
+                "area": check["area"],
+                "status": "Partial",
+                "score_value": 0.5,
+                "why_flagged": f'Possible evidence of this readiness area was detected via weaker keyword match: "{weak_kw}".',
+                "matched_text": extract_snippet_from_normalized(text, weak_start, weak_end),
                 "reference": check["reference"],
                 "review_note": "Human review required."
             })
@@ -87,6 +175,7 @@ def assess_readiness(text: str) -> list[dict]:
             results.append({
                 "area": check["area"],
                 "status": "Missing",
+                "score_value": 0.0,
                 "why_flagged": "No clear evidence of this readiness area was detected in the submitted text.",
                 "matched_text": "",
                 "reference": check["reference"],
@@ -98,7 +187,9 @@ def assess_readiness(text: str) -> list[dict]:
 
 def build_report(use_case_text: str, results: list[dict]) -> str:
     present_count = sum(1 for r in results if r["status"] == "Present")
+    partial_count = sum(1 for r in results if r["status"] == "Partial")
     missing_count = sum(1 for r in results if r["status"] == "Missing")
+    readiness_score = sum(r["score_value"] for r in results)
 
     report = []
     report.append("EU-AI-ACT-READINESS REPORT")
@@ -114,8 +205,9 @@ def build_report(use_case_text: str, results: list[dict]) -> str:
     report.append("READINESS SUMMARY")
     report.append(f"Readiness areas checked: {len(results)}")
     report.append(f"Present: {present_count}")
+    report.append(f"Partial: {partial_count}")
     report.append(f"Missing: {missing_count}")
-    report.append(f"Readiness score: {present_count}/{len(results)}")
+    report.append(f"Readiness score: {readiness_score:.1f}/{len(results)}")
     report.append("")
     report.append("READINESS RESULTS")
 
@@ -143,10 +235,12 @@ def build_report(use_case_text: str, results: list[dict]) -> str:
 def render_status_badge(status: str):
     if status == "Present":
         st.success(f"Status: {status}")
+    elif status == "Partial":
+        st.info(f"Status: {status}")
     elif status == "Missing":
         st.warning(f"Status: {status}")
     else:
-        st.info(f"Status: {status}")
+        st.write(f"Status: {status}")
 
 
 def render_result(result: dict):
@@ -227,7 +321,9 @@ if run_clicked:
         report_text = build_report(use_case_text, results)
 
         present_count = sum(1 for r in results if r["status"] == "Present")
+        partial_count = sum(1 for r in results if r["status"] == "Partial")
         missing_count = sum(1 for r in results if r["status"] == "Missing")
+        readiness_score = sum(r["score_value"] for r in results)
 
         st.success("Readiness check complete.")
         st.info("This output is generated by a limited deterministic checklist engine. It does not make a legal determination. Human review is required.")
@@ -244,8 +340,10 @@ if run_clicked:
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Readiness areas checked", len(results))
         col2.metric("Present", present_count)
-        col3.metric("Missing", missing_count)
-        col4.metric("Readiness score", f"{present_count}/{len(results)}")
+        col3.metric("Partial", partial_count)
+        col4.metric("Missing", missing_count)
+
+        st.metric("Readiness score", f"{readiness_score:.1f}/{len(results)}")
 
         st.subheader("Readiness results")
         for result in results:
