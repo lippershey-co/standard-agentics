@@ -1,5 +1,6 @@
 import os
 import re
+import html
 import streamlit as st
 import anthropic
 from io import BytesIO
@@ -516,6 +517,112 @@ def render_risk_badge(risk_level: str):
         st.write(f"Risk level: {risk_level}")
 
 
+
+def parse_structured_ai_summary(summary_text: str) -> dict:
+    if not summary_text:
+        return {}
+
+    pattern = re.compile(
+        r"(Main review concerns|Likely reviewer focus|Suggested next step|Human review is required\.?)",
+        flags=re.IGNORECASE
+    )
+
+    parts = pattern.split(summary_text.strip())
+    sections = {}
+    current_heading = None
+
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+
+        normalized = part.lower().rstrip(".")
+
+        if normalized == "main review concerns":
+            current_heading = "Main review concerns"
+            sections[current_heading] = ""
+        elif normalized == "likely reviewer focus":
+            current_heading = "Likely reviewer focus"
+            sections[current_heading] = ""
+        elif normalized == "suggested next step":
+            current_heading = "Suggested next step"
+            sections[current_heading] = ""
+        elif normalized == "human review is required":
+            current_heading = "Human review is required."
+            sections[current_heading] = ""
+        else:
+            if current_heading:
+                if sections[current_heading]:
+                    sections[current_heading] += " " + part
+                else:
+                    sections[current_heading] = part
+
+    if not sections:
+        sections = {"Main review concerns": summary_text.strip()}
+
+    return sections
+
+
+def render_ai_summary_section(title: str, body: str, accent_color: str):
+    safe_title = html.escape(title)
+    safe_body = html.escape(body).replace("\n", "<br>")
+
+    st.markdown(
+        f"""
+        <div style="
+            border: 1px solid rgba(255,255,255,0.10);
+            border-left: 4px solid {accent_color};
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+            background-color: rgba(255,255,255,0.03);
+        ">
+            <div style="
+                font-size: 1.0rem;
+                font-weight: 700;
+                color: {accent_color};
+                margin-bottom: 8px;
+            ">
+                {safe_title}
+            </div>
+            <div style="
+                font-size: 0.98rem;
+                line-height: 1.65;
+                color: #E5E7EB;
+            ">
+                {safe_body}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_structured_ai_summary(summary_text: str):
+    sections = parse_structured_ai_summary(summary_text)
+
+    color_map = {
+        "Main review concerns": "#60A5FA",
+        "Likely reviewer focus": "#A78BFA",
+        "Suggested next step": "#34D399",
+    }
+
+    for section_name in [
+        "Main review concerns",
+        "Likely reviewer focus",
+        "Suggested next step",
+    ]:
+        body = sections.get(section_name, "").strip()
+        if body:
+            render_ai_summary_section(
+                section_name,
+                body,
+                color_map.get(section_name, "#60A5FA")
+            )
+
+    st.warning("Human review is required.")
+
+
 def render_finding(finding: dict):
     st.markdown(f"### {finding['title']}")
     render_risk_badge(finding["risk_level"])
@@ -696,7 +803,7 @@ if st.session_state.mlr_precheck_done:
             st.caption("AI summary is available for this input under current public-demo limits.")
 
         if st.session_state.mlr_ai_summary:
-            st.info(st.session_state.mlr_ai_summary)
+            render_structured_ai_summary(st.session_state.mlr_ai_summary)
     else:
         st.warning(ai_message)
 
