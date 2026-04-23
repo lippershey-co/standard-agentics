@@ -58,6 +58,113 @@ def ai_summary_allowed(text: str) -> tuple[bool, str]:
     return True, ""
 
 
+def extract_timeline_lines(lines: list[str]) -> list[str]:
+    timeline_terms = [
+        "within", "days", "day", "weeks", "week", "screening period",
+        "prior to day 1", "prior to", "first dose", "major surgery",
+        "radiotherapy", "biopsy", "site"
+    ]
+    return [line for line in lines if any(term in line.lower() for term in timeline_terms)]
+
+
+def detect_possible_timeline_conflict(lines: list[str]):
+    lower_lines = [line.lower() for line in lines]
+
+    biopsy_requirement_line = next(
+        (lines[i] for i, line in enumerate(lower_lines)
+         if "biopsy" in line and ("within" in line or "screening period" in line or "prior to day 1" in line)),
+        None
+    )
+
+    biopsy_exclusion_line = next(
+        (lines[i] for i, line in enumerate(lower_lines)
+         if ("biopsy site" in line or "active tumor biopsy site" in line)
+         and ("within" in line or "days" in line or "day" in line)),
+        None
+    )
+
+    surgery_or_radiotherapy_line = next(
+        (lines[i] for i, line in enumerate(lower_lines)
+         if ("major surgery" in line or "radiotherapy" in line)
+         and ("within" in line or "weeks" in line or "days" in line)),
+        None
+    )
+
+    if biopsy_requirement_line and biopsy_exclusion_line:
+        return biopsy_requirement_line, biopsy_exclusion_line
+
+    if biopsy_requirement_line and surgery_or_radiotherapy_line:
+        return biopsy_requirement_line, surgery_or_radiotherapy_line
+
+    return None, None
+
+
+def find_snippet(text: str, keyword: str, max_len: int = 260) -> str:
+    if not text or not keyword:
+        return ""
+
+    lower_text = text.lower()
+    lower_keyword = keyword.lower()
+    idx = lower_text.find(lower_keyword)
+    if idx == -1:
+        return ""
+
+    # Prefer full line first
+    line_start = text.rfind("\n", 0, idx)
+    line_end = text.find("\n", idx)
+
+    line_start = 0 if line_start == -1 else line_start + 1
+    line_end = len(text) if line_end == -1 else line_end
+
+    snippet = text[line_start:line_end].strip()
+
+    # If line is too short, expand to nearby sentence-ish boundaries
+    if len(snippet) < 50:
+        left_candidates = [
+            text.rfind(". ", 0, idx),
+            text.rfind("? ", 0, idx),
+            text.rfind("! ", 0, idx),
+            text.rfind("\n\n", 0, idx),
+            text.rfind("\n", 0, idx),
+        ]
+        left = max(left_candidates)
+        left = 0 if left == -1 else left + 1
+
+        right_candidates = [
+            text.find(". ", idx),
+            text.find("? ", idx),
+            text.find("! ", idx),
+            text.find("\n\n", idx),
+            text.find("\n", idx),
+        ]
+        right_candidates = [x for x in right_candidates if x != -1]
+        right = min(right_candidates) if right_candidates else len(text)
+
+        snippet = text[left:right].strip()
+
+    # Controlled fallback
+    if len(snippet) < 25:
+        window_left = max(0, idx - 80)
+        window_right = min(len(text), idx + 180)
+        snippet = text[window_left:window_right].strip()
+
+    # Clean formatting noise
+    snippet = snippet.replace("**", "")
+    snippet = snippet.replace("__", "")
+    snippet = snippet.replace("```", "")
+    snippet = " ".join(snippet.split())
+
+    # Trim leading bullets / markers cleanly
+    while snippet.startswith(("-", "*", ">", "#", ":")):
+        snippet = snippet[1:].lstrip()
+
+    # If still too long, trim neatly
+    if len(snippet) > max_len:
+        snippet = snippet[:max_len].rsplit(" ", 1)[0] + "..."
+
+    return snippet
+
+
 def detect_watchdog_findings(trial_id: str, eligibility_text: str) -> list[dict]:
     findings = []
     lines = split_lines(eligibility_text)
@@ -85,11 +192,19 @@ def detect_watchdog_findings(trial_id: str, eligibility_text: str) -> list[dict]
 
     matched_terms = [term for term in CHANGE_TRIGGER_TERMS if term in lower_text]
     if matched_terms:
+        preferred_term = None
+        for candidate in ["must", "ecog", "prior", "brain metastases", "cardiovascular"]:
+            if candidate in matched_terms:
+                preferred_term = candidate
+                break
+        if not preferred_term:
+            preferred_term = matched_terms[0]
+
         findings.append({
             "title": "Potential eligibility tightening or screening impact terms detected",
             "risk_level": "Medium",
             "why_flagged": "The submitted criteria include terms that often affect screening burden or enrollment eligibility. Matched terms: " + ", ".join(matched_terms[:8]),
-            "matched_text": lines[0] if lines else "",
+            "matched_text": find_snippet(eligibility_text, preferred_term),
             "rule_reference": "Eligibility screening heuristic",
             "review_note": "Human review required."
         })
@@ -99,7 +214,7 @@ def detect_watchdog_findings(trial_id: str, eligibility_text: str) -> list[dict]
             "title": "Performance status restriction detected",
             "risk_level": "Medium",
             "why_flagged": "A performance status restriction was detected and may materially affect the eligible population.",
-            "matched_text": next((line for line in lines if "ecog" in line.lower()), ""),
+            "matched_text": find_snippet(eligibility_text, "ecog"),
             "rule_reference": "Eligibility population narrowing heuristic",
             "review_note": "Human review required."
         })
@@ -109,8 +224,21 @@ def detect_watchdog_findings(trial_id: str, eligibility_text: str) -> list[dict]
             "title": "Potential CNS-related exclusion detected",
             "risk_level": "Medium",
             "why_flagged": "The criteria appear to include a brain metastases-related exclusion, which may significantly affect enrollment.",
-            "matched_text": next((line for line in lines if "brain metastases" in line.lower()), ""),
+            "matched_text": find_snippet(eligibility_text, "brain metastases"),
             "rule_reference": "Eligibility exclusion heuristic",
+            "review_note": "Human review required."
+        })
+
+    timeline_lines = extract_timeline_lines(lines)
+    timeline_line_a, timeline_line_b = detect_possible_timeline_conflict(timeline_lines)
+
+    if timeline_line_a and timeline_line_b:
+        findings.append({
+            "title": "Potential timeline conflict or logistical deadlock",
+            "risk_level": "High",
+            "why_flagged": "The submitted criteria contain multiple time-bound procedural requirements or exclusions that may create a narrow or conflicting screening window, potentially reducing enrollment feasibility.",
+            "matched_text": timeline_line_a + " | " + timeline_line_b,
+            "rule_reference": "Eligibility feasibility / timeline conflict heuristic",
             "review_note": "Human review required."
         })
 
