@@ -361,12 +361,15 @@ def generate_ai_summary(trial_id: str, eligibility_text: str, findings: list[dic
 
     system_prompt = (
         "You are an assistive reviewer summarizer for clinical trial eligibility criteria. "
-        "You must summarize only the deterministic findings provided to you. "
+        "You must summarize only the deterministic findings provided to you, plus limited clearly grounded operational implications that directly follow from those findings. "
         "Do not invent new findings. "
         "Do not state PASS or FAIL. "
-        "Do not state the criteria are approved, feasible, or compliant. "
-        "Keep the output concise, practical, and plain-English. "
-        "End by stating that human review is required."
+        "Do not state the criteria are approved, feasible, compliant, or acceptable. "
+        "Do not make definitive regulatory or feasibility judgments. "
+        "Be concise, practical, and plain-English. "
+        "Your output must use exactly these section headings in this exact order: "
+        "'Main review concerns', 'Likely reviewer focus', 'Suggested next step'. "
+        "End with the exact sentence: 'Human review is required.'"
     )
 
     user_prompt = f"""
@@ -379,12 +382,25 @@ Eligibility text:
 Deterministic findings:
 {findings_text}
 
-Please produce:
-1. A short summary of the main review concerns
-2. A short section called "Likely reviewer focus"
-3. A short section called "Suggested next step"
+Write the response in this exact structure:
 
-Do not add findings beyond what is listed above.
+Main review concerns
+<1 short paragraph summarizing the most important deterministic findings and any limited directly grounded operational implications.>
+
+Likely reviewer focus
+<1 short paragraph describing what a reviewer would most likely examine next, based only on the deterministic findings and clearly grounded implications.>
+
+Suggested next step
+<1 short paragraph with the most practical next action, based only on the deterministic findings.>
+
+Human review is required.
+
+Rules:
+- Do not add new findings not supported by the deterministic findings.
+- Do not use bullet points.
+- Do not output PASS or FAIL.
+- Do not say the criteria are approved, feasible, compliant, or acceptable.
+- Keep the tone practical and professional.
 """
 
     message = client.messages.create(
