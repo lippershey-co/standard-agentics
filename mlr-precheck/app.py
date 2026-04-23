@@ -161,7 +161,29 @@ if "mlr_text" not in st.session_state:
 st.title("MLR-PreCheck")
 st.caption("Review promotional text for possible medical, legal, and regulatory risk signals.")
 
-with st.expander("How to use", expanded=True):
+with st.expander("How this tool works", expanded=True):
+    st.markdown("""
+### Deterministic review engine
+This tool first runs a deterministic Python rules engine.  
+It checks the submitted text against a fixed set of known promotional-risk patterns and reference areas.  
+This deterministic layer is the **source of truth** for findings shown in the public demo.
+
+### Claude-based AI summary (optional, coming next)
+An optional Claude-based AI summary layer can be added to rewrite deterministic findings into a more readable review note.  
+This AI layer is **assistive only**. It does not replace the deterministic findings or human review.
+
+### Public demo limits
+- Paste plain text only
+- Oncology promotional / claim-review text only
+- Deterministic review: up to 12,000 characters
+- Future AI summary layer: smaller input cap and limited daily usage
+- No PDF or DOCX support in the public demo
+- No patient, personal, or confidential commercial data
+
+[Having issues? drop us an email](mailto:hello@lippershey.co)
+    """)
+
+with st.expander("How to use", expanded=False):
     st.markdown("""
 1. Paste promotional text into the input box
 2. Click **Run pre-check**
@@ -213,7 +235,7 @@ if run_clicked:
     if not promo_text.strip():
         st.warning("Please paste promotional text before running the pre-check.")
     elif len(promo_text) > 12000:
-        st.error("The pasted text exceeds the 12,000 character limit.")
+        st.error("Public demo limit reached: this text exceeds 12,000 characters. For larger promotional assets or supported review workflows, contact us for pricing.")
     else:
         findings = detect_findings(promo_text)
         report_text = build_report(promo_text, findings)
@@ -244,3 +266,4 @@ st.divider()
 st.markdown("**Run locally via GitHub**")
 st.markdown("For private or extended use, run the tool locally from the Standard Agentics repository.")
 st.markdown("[Open the Standard Agentics repository](https://github.com/lippershey-co/standard-agentics)")
+st.markdown("[Having issues? drop us an email](mailto:hello@lippershey.co)")
