@@ -1,165 +1,312 @@
+import re
 import streamlit as st
 
-SAMPLE_NCT_ID = "NCT01234567"
+SAMPLE_TRIAL_ID = "NCT-DEMO-001"
 
 SAMPLE_ELIGIBILITY_TEXT = """Inclusion Criteria:
 - Adults aged 18 years or older
-- Histologically confirmed advanced solid tumor
+- Histologically confirmed metastatic non-small cell lung cancer
 - ECOG performance status 0-1
+- At least one measurable lesion per RECIST 1.1
+- Prior platinum-based chemotherapy allowed
 
 Exclusion Criteria:
-- Active uncontrolled infection
-- Prior treatment with investigational Drug X
-- Untreated central nervous system metastases
+- Active untreated brain metastases
+- Significant cardiovascular disease within 6 months
+- Prior treatment with the investigational study drug
 """
 
+CHANGE_TRIGGER_TERMS = [
+    "must", "required", "only", "prior", "allowed", "excluded",
+    "exclusion", "inclusion", "ecog", "measurable", "metastatic",
+    "brain metastases", "cardiovascular"
+]
 
-def build_report(mode: str, nct_id: str, pasted_text: str) -> str:
+
+def split_lines(text: str) -> list[str]:
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def normalize_line(line: str) -> str:
+    line = line.lower().strip()
+    line = re.sub(r"\s+", " ", line)
+    return line
+
+
+def detect_watchdog_findings(trial_id: str, eligibility_text: str) -> list[dict]:
+    findings = []
+    lines = split_lines(eligibility_text)
+    lower_text = eligibility_text.lower()
+
+    if trial_id.strip():
+        findings.append({
+            "title": "Trial identifier provided",
+            "risk_level": "Info",
+            "why_flagged": f'The review is anchored to the provided trial identifier: "{trial_id.strip()}".',
+            "matched_text": trial_id.strip(),
+            "rule_reference": "Structured metadata anchor",
+            "review_note": "Human review required."
+        })
+
+    if "inclusion criteria" not in lower_text and "exclusion criteria" not in lower_text:
+        findings.append({
+            "title": "Criteria structure may be incomplete",
+            "risk_level": "Medium",
+            "why_flagged": "The submitted text does not clearly separate inclusion and exclusion criteria.",
+            "matched_text": eligibility_text[:220].strip(),
+            "rule_reference": "Trial criteria structure heuristic",
+            "review_note": "Human review required."
+        })
+
+    matched_terms = [term for term in CHANGE_TRIGGER_TERMS if term in lower_text]
+    if matched_terms:
+        findings.append({
+            "title": "Potential eligibility tightening or screening impact terms detected",
+            "risk_level": "Medium",
+            "why_flagged": "The submitted criteria include terms that often affect screening burden or enrollment eligibility. Matched terms: " + ", ".join(matched_terms[:8]),
+            "matched_text": lines[0] if lines else "",
+            "rule_reference": "Eligibility screening heuristic",
+            "review_note": "Human review required."
+        })
+
+    if "ecog" in lower_text and ("0-1" in lower_text or "0/1" in lower_text):
+        findings.append({
+            "title": "Performance status restriction detected",
+            "risk_level": "Medium",
+            "why_flagged": "A performance status restriction was detected and may materially affect the eligible population.",
+            "matched_text": next((line for line in lines if "ecog" in line.lower()), ""),
+            "rule_reference": "Eligibility population narrowing heuristic",
+            "review_note": "Human review required."
+        })
+
+    if "brain metastases" in lower_text and ("exclude" in lower_text or "exclusion" in lower_text or "untreated" in lower_text):
+        findings.append({
+            "title": "Potential CNS-related exclusion detected",
+            "risk_level": "Medium",
+            "why_flagged": "The criteria appear to include a brain metastases-related exclusion, which may significantly affect enrollment.",
+            "matched_text": next((line for line in lines if "brain metastases" in line.lower()), ""),
+            "rule_reference": "Eligibility exclusion heuristic",
+            "review_note": "Human review required."
+        })
+
+    return findings
+
+
+def build_report(trial_id: str, eligibility_text: str, findings: list[dict]) -> str:
     report = []
     report.append("TRIAL-ELIGIBILITY-WATCHDOG REPORT")
     report.append("")
-    report.append("This public demo does not yet fetch or compare live ClinicalTrials.gov records.")
-    report.append("It does not determine patient eligibility.")
+    report.append("This public demo uses a limited deterministic review engine.")
+    report.append("It does not determine trial feasibility or regulatory acceptability.")
     report.append("Human review is required.")
-    report.append("No PDF support is included in this public demo.")
     report.append("")
     report.append("INPUT SUMMARY")
-    report.append(f"Input mode: {mode}")
+    report.append(f"Trial identifier: {trial_id.strip() or 'Not provided'}")
+    report.append(f"Eligibility text length: {len(eligibility_text)} characters")
+    report.append("")
+    report.append("FINDINGS")
 
-    if mode == "NCT ID":
-        report.append(f"NCT ID submitted: {nct_id}")
+    if findings:
+        for i, finding in enumerate(findings, start=1):
+            report.append(f"{i}. {finding['title']}")
+            report.append(f"   Risk level: {finding['risk_level']}")
+            report.append(f"   Why flagged: {finding['why_flagged']}")
+            report.append(f"   Matched text: {finding['matched_text']}")
+            report.append(f"   Rule reference: {finding['rule_reference']}")
+            report.append(f"   Review note: {finding['review_note']}")
+            report.append("")
     else:
-        report.append(f"Eligibility text length: {len(pasted_text)} characters")
+        report.append("No findings triggered by the current v1 rule set.")
         report.append("")
-        report.append("ELIGIBILITY TEXT PREVIEW")
-        report.append(pasted_text[:1000])
 
-    report.append("")
     report.append("SCOPE LIMITS")
-    report.append("- Single NCT ID or pasted text only")
-    report.append("- No PDF support in v1")
-    report.append("- No determination of patient eligibility")
+    report.append("- Text-only demo")
+    report.append("- No PDF or DOCX support in this step")
+    report.append("- No final feasibility or regulatory determination")
     report.append("")
-
     return "\n".join(report)
+
+
+def render_risk_badge(risk_level: str):
+    if risk_level == "High":
+        st.error(f"Risk level: {risk_level}")
+    elif risk_level == "Medium":
+        st.warning(f"Risk level: {risk_level}")
+    elif risk_level == "Low":
+        st.info(f"Risk level: {risk_level}")
+    elif risk_level == "Info":
+        st.caption(f"Risk level: {risk_level}")
+    else:
+        st.write(f"Risk level: {risk_level}")
+
+
+def render_finding(finding: dict):
+    st.markdown(f"### {finding['title']}")
+    render_risk_badge(finding["risk_level"])
+    st.write(f"**Why it was flagged:** {finding['why_flagged']}")
+    st.write(f"**Matched text snippet:** {finding['matched_text'] or 'None'}")
+    st.write(f"**Rule reference:** {finding['rule_reference']}")
+    st.write(f"**Review note:** {finding['review_note']}")
 
 
 st.set_page_config(page_title="Trial-Eligibility-Watchdog", layout="wide")
 
-if "watchdog_mode" not in st.session_state:
-    st.session_state.watchdog_mode = "NCT ID"
-if "watchdog_nct_id" not in st.session_state:
-    st.session_state.watchdog_nct_id = ""
-if "watchdog_text" not in st.session_state:
-    st.session_state.watchdog_text = ""
+defaults = {
+    "tew_trial_id": "",
+    "tew_text": "",
+    "tew_done": False,
+    "tew_last_trial_id": "",
+    "tew_last_text": "",
+    "tew_last_findings": [],
+    "tew_last_report": "",
+    "tew_ai_summary": "",
+}
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 st.title("Trial-Eligibility-Watchdog")
-st.caption("Track and review clinical trial eligibility criteria changes.")
+st.caption("Track and review clinical trial eligibility criteria for possible screening or enrollment-impact signals.")
 
-with st.expander("How to use", expanded=True):
+with st.expander("How this tool works", expanded=True):
     st.markdown("""
-1. Enter a ClinicalTrials.gov **NCT ID** or paste eligibility criteria text
-2. Click **Run check**
-3. Review the output
+### Deterministic review engine
+This tool first runs a deterministic Python review engine.  
+It checks the submitted eligibility text against a fixed set of structural and screening-impact heuristics.  
+This deterministic layer is the **source of truth** for findings shown in the public demo.
+
+### Claude-based AI summary
+An optional Claude-based AI summary layer can later rewrite deterministic findings into a more readable reviewer note.  
+This AI layer is **assistive only**. It does not replace deterministic findings or human review.
+
+### Public demo limits
+- Paste plain text only
+- Trial eligibility / screening text only
+- Deterministic review: up to 12,000 characters
+- AI summary: limited to smaller inputs and restricted public-demo usage
+- No PDF or DOCX support in the public demo
+- No patient, personal, or confidential commercial data
+
+[Having issues? drop us an email](mailto:hello@lippershey.co)
+    """)
+
+with st.expander("How to use", expanded=False):
+    st.markdown("""
+1. Enter a trial identifier if available
+2. Paste eligibility criteria text
+3. Click **Run watchdog**
+4. Review deterministic findings
+5. Optionally generate an AI summary in a later step
     """)
 
 with st.expander("Public demo policy", expanded=False):
     st.markdown("""
 - Testing only
 - English only
-- No PDF support in v1
-- One NCT ID or one pasted text block only
+- Paste text only in v1
+- No PDF or DOCX support in this demo step
+- Maximum 12,000 characters
 - No confidential, patient, or business-sensitive data
 - Human review required
     """)
 
-top_col1, top_col2, top_col3, top_col4 = st.columns([1, 1, 1, 3])
+top_col1, top_col2, top_col3 = st.columns([1, 1, 3])
 
 with top_col1:
-    if st.button("Load sample NCT ID"):
-        st.session_state.watchdog_mode = "NCT ID"
-        st.session_state.watchdog_nct_id = SAMPLE_NCT_ID
-        st.session_state.watchdog_text = ""
+    if st.button("Load sample text"):
+        st.session_state.tew_trial_id = SAMPLE_TRIAL_ID
+        st.session_state.tew_text = SAMPLE_ELIGIBILITY_TEXT
+        st.session_state.tew_done = False
+        st.session_state.tew_ai_summary = ""
         st.rerun()
 
 with top_col2:
-    if st.button("Load sample criteria"):
-        st.session_state.watchdog_mode = "Pasted eligibility text"
-        st.session_state.watchdog_text = SAMPLE_ELIGIBILITY_TEXT
-        st.session_state.watchdog_nct_id = ""
+    if st.button("Reset"):
+        st.session_state.tew_trial_id = ""
+        st.session_state.tew_text = ""
+        st.session_state.tew_done = False
+        st.session_state.tew_last_trial_id = ""
+        st.session_state.tew_last_text = ""
+        st.session_state.tew_last_findings = []
+        st.session_state.tew_last_report = ""
+        st.session_state.tew_ai_summary = ""
         st.rerun()
 
 with top_col3:
-    if st.button("Reset"):
-        st.session_state.watchdog_mode = "NCT ID"
-        st.session_state.watchdog_nct_id = ""
-        st.session_state.watchdog_text = ""
-        st.rerun()
+    st.caption("Use the sample eligibility text for a quick demo, or reset the form.")
 
-with top_col4:
-    st.caption("Use a sample NCT ID or sample eligibility criteria for a quick demo, or reset the form.")
-
-mode = st.radio(
-    "Choose input type",
-    ["NCT ID", "Pasted eligibility text"],
-    horizontal=True,
-    key="watchdog_mode"
+trial_id = st.text_input(
+    "Trial identifier / NCT ID",
+    placeholder="Example: NCT01234567",
+    key="tew_trial_id"
 )
 
-if mode == "NCT ID":
-    nct_id = st.text_input(
-        "ClinicalTrials.gov NCT ID",
-        placeholder="Example: NCT01234567",
-        key="watchdog_nct_id"
-    )
-    pasted_text = ""
-else:
-    pasted_text = st.text_area(
-        "Eligibility criteria text",
-        height=300,
-        placeholder="Paste eligibility criteria here...",
-        key="watchdog_text"
-    )
-    st.caption(f"Characters: {len(pasted_text)}/12000")
-    nct_id = ""
+eligibility_text = st.text_area(
+    "Eligibility criteria text",
+    height=320,
+    placeholder="Paste eligibility criteria here...",
+    key="tew_text"
+)
+st.caption(f"Characters: {len(eligibility_text)}/12000")
 
-run_clicked = st.button("Run check")
+if st.button("Run watchdog"):
+    if not eligibility_text.strip():
+        st.warning("Please paste eligibility criteria text before running the watchdog.")
+    elif len(eligibility_text) > 12000:
+        st.error("Public demo limit reached: this text exceeds 12,000 characters. For larger criteria sets or supported workflows, contact us for pricing.")
+        st.session_state.tew_done = False
+    else:
+        findings = detect_watchdog_findings(trial_id, eligibility_text)
+        report_text = build_report(trial_id, eligibility_text, findings)
+        st.session_state.tew_last_trial_id = trial_id
+        st.session_state.tew_last_text = eligibility_text
+        st.session_state.tew_last_findings = findings
+        st.session_state.tew_last_report = report_text
+        st.session_state.tew_done = True
+        st.session_state.tew_ai_summary = ""
+        st.rerun()
 
 st.divider()
 
-if not run_clicked and not nct_id.strip() and not pasted_text.strip():
-    st.info("Start by loading a sample NCT ID, loading sample criteria, or entering your own input.")
+if not st.session_state.tew_done and not eligibility_text.strip():
+    st.info("Start by loading the sample text or pasting eligibility criteria to evaluate.")
 
-if run_clicked:
-    if mode == "NCT ID" and not nct_id.strip():
-        st.warning("Please enter an NCT ID before running the check.")
-    elif mode == "Pasted eligibility text" and not pasted_text.strip():
-        st.warning("Please paste eligibility criteria text before running the check.")
-    elif len(pasted_text) > 12000:
-        st.error("The pasted text exceeds the 12,000 character limit.")
+if st.session_state.tew_done:
+    last_trial_id = st.session_state.tew_last_trial_id
+    last_text = st.session_state.tew_last_text
+    findings = st.session_state.tew_last_findings
+    report_text = st.session_state.tew_last_report
+
+    st.success("Watchdog review complete.")
+    st.info("This output is generated by a limited deterministic review engine. It does not determine feasibility, eligibility approval, or regulatory acceptability. Human review is required.")
+    st.caption("Scope limits: text-only demo, no PDF or DOCX support in this step, no final feasibility or regulatory determination.")
+
+    st.download_button(
+        label="Download text report",
+        data=report_text,
+        file_name="trial_eligibility_watchdog_report.txt",
+        mime="text/plain"
+    )
+
+    st.subheader("Findings")
+    if findings:
+        for finding in findings:
+            render_finding(finding)
+            st.divider()
     else:
-        report_text = build_report(mode, nct_id, pasted_text)
+        st.success("No findings were triggered by the current v1 rule set.")
 
-        st.success("Input accepted. Trial-Eligibility-Watchdog engine coming next.")
-        st.info("This public demo does not yet fetch or compare live ClinicalTrials.gov records. Human review is required.")
-        st.caption("Scope limits: single NCT ID or pasted text only, no PDF support in v1, no determination of patient eligibility.")
+    st.subheader("AI summary (public demo preview)")
+    if len(last_text) > 3500:
+        st.warning("Deterministic review completed. AI summary is limited to 3,500 characters in the public demo. For larger inputs and extended review support, contact us for pricing.")
+    else:
+        st.info("Claude-based AI summary will appear here once connected. It will summarize the deterministic findings only and will remain subject to public-demo limits.")
 
-        st.download_button(
-            label="Download text report",
-            data=report_text,
-            file_name="trial_eligibility_watchdog_report.txt",
-            mime="text/plain"
-        )
-
-        st.subheader("Input preview")
-        if mode == "NCT ID":
-            st.write(f"NCT ID submitted: {nct_id}")
-        else:
-            st.write(f"Eligibility text length: {len(pasted_text)} characters")
-            with st.expander("Preview pasted eligibility text"):
-                st.write(pasted_text[:1000])
+    with st.expander("Preview pasted eligibility text"):
+        st.write(last_text[:1200])
 
 st.divider()
 st.markdown("**Run locally via GitHub**")
 st.markdown("For private or extended use, run the tool locally from the Standard Agentics repository.")
 st.markdown("[Open the Standard Agentics repository](https://github.com/lippershey-co/standard-agentics)")
+st.markdown("[Having issues? drop us an email](mailto:hello@lippershey.co)")
