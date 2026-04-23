@@ -1007,7 +1007,8 @@ if st.session_state.euai_done:
             render_structured_ai_summary(st.session_state.euai_ai_summary)
     else:
         st.warning(ai_message)
-
+       
+    st.divider()
     st.subheader("Result Quality Review")
     st.caption("Review how this result can be further analyzed in a private deployment, with deeper case-specific quality checks and internal QA support.")
 

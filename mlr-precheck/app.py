@@ -623,6 +623,46 @@ def render_structured_ai_summary(summary_text: str):
     st.warning("Human review is required.")
 
 
+
+def render_private_pilot_locked_section(title: str, description: str):
+    st.markdown(
+        f"""
+        <div style="
+            border: 1px solid rgba(255,255,255,0.10);
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+            background-color: rgba(255,255,255,0.02);
+        ">
+            <div style="
+                font-size: 1.0rem;
+                font-weight: 700;
+                color: #E5E7EB;
+                margin-bottom: 6px;
+            ">
+                🔒 {title}
+            </div>
+            <div style="
+                font-size: 0.92rem;
+                color: #A1A1AA;
+                margin-bottom: 10px;
+            ">
+                <strong>Private Pilot feature</strong>
+            </div>
+            <div style="
+                font-size: 0.97rem;
+                line-height: 1.6;
+                color: #D4D4D8;
+                margin-bottom: 12px;
+            ">
+                {description}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_finding(finding: dict):
     st.markdown(f"### {finding['title']}")
     render_risk_badge(finding["risk_level"])
@@ -807,6 +847,50 @@ if st.session_state.mlr_precheck_done:
     else:
         st.warning(ai_message)
 
+    
+    st.divider()
+    st.subheader("Result Quality Review")
+    st.caption("Review how this result can be further analyzed in a private deployment, with deeper case-specific quality checks and internal QA support.")
+
+    if st.button("Open Quality Review"):
+        st.session_state.mlr_quality_review_open = True
+        st.rerun()
+
+    if st.session_state.get("mlr_quality_review_open"):
+        render_private_pilot_locked_section(
+            "Case-Specific Result Assessment",
+            "Access a deeper review of the result quality based on the exact case, workflow, and output."
+        )
+
+        render_private_pilot_locked_section(
+            "What the Tool Handled Well",
+            "See which parts of the result performed well in this specific scenario."
+        )
+
+        render_private_pilot_locked_section(
+            "Confidence and Limitations Review",
+            "Review a more detailed confidence and limitations analysis tied to the exact output."
+        )
+
+        render_private_pilot_locked_section(
+            "Detailed Missed-Issue Analysis",
+            "Reveal likely gaps, blind spots, or under-detected issues based on the specific case."
+        )
+
+        render_private_pilot_locked_section(
+            "Case-Specific Improvement Recommendations",
+            "Unlock more targeted recommendations for improving logic coverage, evidence quality, and reporting."
+        )
+
+        render_private_pilot_locked_section(
+            "Structured Edge-Case Logging",
+            "Capture structured QA feedback for internal review, future tuning, and product-improvement workflows."
+        )
+
+        if st.button("Unlock in Private Pilot"):
+            st.info(
+                "Private Pilot includes private/internal deployment, deeper adaptive review, and structured QA logging. Contact hello@lippershey.co to discuss options."
+            )
     with st.expander("Preview pasted promotional text"):
         st.write(last_text[:1200])
 
