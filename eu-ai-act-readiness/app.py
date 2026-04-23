@@ -1,5 +1,7 @@
+import os
 import re
 import streamlit as st
+import anthropic
 
 SAMPLE_USE_CASE_TEXT = """We use an AI system to screen oncology trial candidates based on structured patient data and clinical notes.
 The system ranks likely eligible patients for manual review by the study team.
@@ -223,6 +225,77 @@ def generate_ai_summary_placeholder(findings: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def generate_ai_summary(use_case_text: str, findings: list[dict]) -> str:
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return "AI summary is not available because ANTHROPIC_API_KEY is not set on this runtime."
+
+    findings_text = "\n".join(
+        [
+            f"- {f['title']} | Status: {f['status']} | Why: {f['why_flagged']} | Reference: {f['reference_area']}"
+            for f in findings
+        ]
+    ) or "- No deterministic findings triggered."
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    system_prompt = (
+        "You are an assistive EU AI Act readiness summarizer. "
+        "You must summarize only the deterministic findings provided to you, plus limited clearly grounded implications that directly follow from those findings. "
+        "Do not invent new findings. "
+        "Do not state PASS or FAIL. "
+        "Do not state the system is compliant, approved, legal, or high-risk unless that was already explicitly established in the deterministic findings. "
+        "Do not make definitive legal or regulatory judgments. "
+        "Be concise, practical, and plain-English. "
+        "Your output must use exactly these section headings in this exact order: "
+        "'Main review concerns', 'Likely reviewer focus', 'Suggested next step'. "
+        "End with the exact sentence: 'Human review is required.'"
+    )
+
+    user_prompt = f"""
+Use-case text:
+{use_case_text}
+
+Deterministic findings:
+{findings_text}
+
+Write the response in this exact structure:
+
+Main review concerns
+<1 short paragraph summarizing the most important deterministic findings and any limited directly grounded implications.>
+
+Likely reviewer focus
+<1 short paragraph describing what a reviewer would most likely examine next, based only on the deterministic findings and clearly grounded implications.>
+
+Suggested next step
+<1 short paragraph with the most practical next action, based only on the deterministic findings.>
+
+Human review is required.
+
+Rules:
+- Do not add new findings not supported by the deterministic findings.
+- Do not use bullet points.
+- Do not output PASS or FAIL.
+- Do not say the system is compliant, approved, legal, or definitively classified.
+- Keep the tone practical and professional.
+"""
+
+    message = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=700,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_prompt}],
+    )
+
+    parts = []
+    for block in message.content:
+        block_text = getattr(block, "text", None)
+        if block_text:
+            parts.append(block_text)
+
+    return "\n".join(parts).strip() or "AI summary returned no text."
+
+
 def render_status_badge(status: str):
     if status == "Present":
         st.success(f"Status: {status}")
@@ -384,9 +457,17 @@ if st.session_state.euai_done:
     allowed, ai_message = ai_summary_allowed(last_text)
     if allowed:
         if st.button("Generate AI summary"):
-            st.info(generate_ai_summary_placeholder(findings))
+            with st.spinner("Generating AI summary..."):
+                try:
+                    st.session_state.euai_ai_summary = generate_ai_summary(last_text, findings)
+                    st.rerun()
+                except Exception as e:
+                    st.warning(f"AI summary is temporarily unavailable. Deterministic review remains available. Details: {e}")
         else:
             st.caption("AI summary is available for this input under current public-demo limits.")
+
+        if st.session_state.euai_ai_summary:
+            st.info(st.session_state.euai_ai_summary)
     else:
         st.warning(ai_message)
 
