@@ -165,6 +165,37 @@ def find_snippet(text: str, keyword: str, max_len: int = 260) -> str:
     return snippet
 
 
+def detect_population_accessibility_risk(text: str):
+    lower_text = text.lower()
+
+    nsclc_context = (
+        "nsclc" in lower_text
+        or "non-small cell lung cancer" in lower_text
+        or "non small cell lung cancer" in lower_text
+    )
+
+    metastatic_context = "metastatic" in lower_text or "stage iv" in lower_text
+
+    multi_line_requirement = (
+        "at least 2 prior lines" in lower_text
+        or "2 prior lines" in lower_text
+        or "two prior lines" in lower_text
+        or "received at least 2 prior lines" in lower_text
+    )
+
+    excludes_checkpoint = (
+        "pd-1" in lower_text
+        or "pd-l1" in lower_text
+        or "checkpoint inhibitor" in lower_text
+        or "checkpoint inhibitors" in lower_text
+    )
+
+    if nsclc_context and metastatic_context and multi_line_requirement and excludes_checkpoint:
+        return True
+
+    return False
+
+
 def detect_watchdog_findings(trial_id: str, eligibility_text: str) -> list[dict]:
     findings = []
     lines = split_lines(eligibility_text)
@@ -239,6 +270,16 @@ def detect_watchdog_findings(trial_id: str, eligibility_text: str) -> list[dict]
             "why_flagged": "The submitted criteria contain multiple time-bound procedural requirements or exclusions that may create a narrow or conflicting screening window, potentially reducing enrollment feasibility.",
             "matched_text": timeline_line_a + " | " + timeline_line_b,
             "rule_reference": "Eligibility feasibility / timeline conflict heuristic",
+            "review_note": "Human review required."
+        })
+
+    if detect_population_accessibility_risk(eligibility_text):
+        findings.append({
+            "title": "Potential population accessibility risk",
+            "risk_level": "High",
+            "why_flagged": "The criteria appear to require heavily pretreated metastatic NSCLC patients while excluding therapies commonly used in the current standard-of-care pathway, which may materially reduce the realistically eligible population.",
+            "matched_text": find_snippet(eligibility_text, "pd-1") or find_snippet(eligibility_text, "pd-l1") or find_snippet(eligibility_text, "2 prior lines"),
+            "rule_reference": "Population accessibility / standard-of-care mismatch heuristic",
             "review_note": "Human review required."
         })
 
@@ -385,27 +426,34 @@ def build_transparency_report_text(trial_id: str = "") -> str:
         "- The AI layer summarizes deterministic findings in plain language.",
         "- Human review remains required.",
         "",
-        "4. HUMAN OVERSIGHT",
+        "4. CLINICAL LOGIC USED IN THIS DEMO",
+        "- Eligibility tightening / screening-impact heuristics",
+        "- Performance status restriction detection",
+        "- CNS-related exclusion detection",
+        "- Timeline conflict / logistical deadlock heuristic",
+        "- Population accessibility / standard-of-care mismatch heuristic",
+        "",
+        "5. HUMAN OVERSIGHT",
         "- This tool is assistive only.",
         "- It does not determine feasibility, protocol approval, or regulatory acceptability.",
         "- A qualified human reviewer must review all output before use.",
         "",
-        "5. DATA HANDLING",
+        "6. DATA HANDLING",
         "- Public demo inputs are processed to generate the current output.",
         "- Do not submit patient, personal, or confidential commercial data.",
         "- This report is a transparency artifact, not a declaration of conformity.",
         "",
-        "6. PUBLIC DEMO LIMITS",
+        "7. PUBLIC DEMO LIMITS",
         "- Paste plain text only",
         "- English only",
         "- Deterministic review up to 12,000 characters",
         "- AI summary limited to smaller public-demo inputs",
         "- No PDF or DOCX support in the public demo",
         "",
-        "7. ACCOUNTABILITY",
+        "8. ACCOUNTABILITY",
         "- Final accountability remains with the deploying organization and human reviewer.",
         "",
-        "8. SUPPORT",
+        "9. SUPPORT",
         "- Having issues? drop us an email: hello@lippershey.co",
         "",
     ]
@@ -539,7 +587,6 @@ with st.expander("Public demo policy", expanded=False):
 - Human review required
     """)
 
-top_col1, top_col2, top_col3 = st.columns([1, 1, 3])
 
 
 with st.expander("Transparency & oversight", expanded=False):
@@ -556,6 +603,7 @@ This app can generate a **Transparency & Oversight Report** describing:
 This is a transparency artifact for stakeholders.  
 It is **not** a declaration of conformity and **not** a legal approval.
     """)
+top_col1, top_col2, top_col3 = st.columns([1, 1, 3])
 
 with top_col1:
     if st.button("Load sample text"):
