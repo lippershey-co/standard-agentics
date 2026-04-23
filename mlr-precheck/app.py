@@ -1,5 +1,7 @@
+import os
 import re
 import streamlit as st
+import anthropic
 
 SAMPLE_PROMO_TEXT = """Drug X significantly improved progression-free survival in adult patients with advanced solid tumors.
 This breakthrough therapy was well tolerated and offers superior disease control.
@@ -152,26 +154,59 @@ def build_report(promo_text: str, findings: list[dict]) -> str:
     return "\n".join(report)
 
 
-def generate_ai_summary_placeholder(promo_text: str, findings: list[dict]) -> str:
-    if not findings:
-        return (
-            "No deterministic findings were triggered by the current v1 rule set. "
-            "Once connected, the Claude-based AI summary will turn this result into a short plain-language review note."
-        )
+def generate_ai_summary(promo_text: str, findings: list[dict]) -> str:
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return "AI summary is not available because ANTHROPIC_API_KEY is not set on this runtime."
 
-    lines = []
-    lines.append("Claude-based AI summary preview")
-    lines.append("")
-    lines.append("This placeholder shows where the assistive AI summary will appear.")
-    lines.append("It will summarize deterministic findings only, not replace them.")
-    lines.append("")
-    lines.append(f"Number of deterministic findings: {len(findings)}")
-    lines.append("Top flagged issues:")
-    for finding in findings[:3]:
-        lines.append(f"- {finding['title']} ({finding['risk_level']})")
-    lines.append("")
-    lines.append("Human review is still required.")
-    return "\n".join(lines)
+    findings_text = "\n".join(
+        [
+            f"- {f['title']} | Risk: {f['risk_level']} | Why: {f['why_flagged']} | Rule: {f['rule_reference']}"
+            for f in findings
+        ]
+    ) or "- No deterministic findings triggered."
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    system_prompt = (
+        "You are an assistive MLR review summarizer for oncology promotional text. "
+        "You must summarize only the deterministic findings provided to you. "
+        "Do not invent new findings. "
+        "Do not state PASS or FAIL. "
+        "Do not say the text is compliant, approved, or legally safe. "
+        "Keep the output concise, practical, and plain-English. "
+        "End by stating that human review is required."
+    )
+
+    user_prompt = f"""
+Promotional text:
+{promo_text}
+
+Deterministic findings:
+{findings_text}
+
+Please produce:
+1. A short summary of the main review concerns
+2. A short section called "Likely reviewer focus"
+3. A short section called "Suggested next step"
+
+Do not add findings beyond what is listed above.
+"""
+
+    message = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=700,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_prompt}],
+    )
+
+    parts = []
+    for block in message.content:
+        text = getattr(block, "text", None)
+        if text:
+            parts.append(text)
+
+    return "\n".join(parts).strip() or "AI summary returned no text."
 
 
 def render_risk_badge(risk_level: str):
@@ -196,8 +231,17 @@ def render_finding(finding: dict):
 
 st.set_page_config(page_title="MLR-PreCheck", layout="wide")
 
-if "mlr_text" not in st.session_state:
-    st.session_state.mlr_text = ""
+defaults = {
+    "mlr_text": "",
+    "mlr_precheck_done": False,
+    "mlr_last_text": "",
+    "mlr_last_findings": [],
+    "mlr_last_report": "",
+    "mlr_ai_summary": "",
+}
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 st.title("MLR-PreCheck")
 st.caption("Review promotional text for possible medical, legal, and regulatory risk signals.")
@@ -248,11 +292,18 @@ top_col1, top_col2, top_col3 = st.columns([1, 1, 3])
 with top_col1:
     if st.button("Load sample text"):
         st.session_state.mlr_text = SAMPLE_PROMO_TEXT
+        st.session_state.mlr_precheck_done = False
+        st.session_state.mlr_ai_summary = ""
         st.rerun()
 
 with top_col2:
     if st.button("Reset"):
         st.session_state.mlr_text = ""
+        st.session_state.mlr_precheck_done = False
+        st.session_state.mlr_last_text = ""
+        st.session_state.mlr_last_findings = []
+        st.session_state.mlr_last_report = ""
+        st.session_state.mlr_ai_summary = ""
         st.rerun()
 
 with top_col3:
@@ -266,53 +317,71 @@ promo_text = st.text_area(
 )
 st.caption(f"Characters: {len(promo_text)}/12000")
 
-run_clicked = st.button("Run pre-check")
-
-st.divider()
-
-if not run_clicked and not promo_text.strip():
-    st.info("Start by loading the sample text or pasting promotional text to evaluate.")
-
-if run_clicked:
+if st.button("Run pre-check"):
     if not promo_text.strip():
         st.warning("Please paste promotional text before running the pre-check.")
     elif len(promo_text) > 12000:
         st.error("Public demo limit reached: this text exceeds 12,000 characters. For larger promotional assets or supported review workflows, contact us for pricing.")
+        st.session_state.mlr_precheck_done = False
     else:
         findings = detect_findings(promo_text)
         report_text = build_report(promo_text, findings)
+        st.session_state.mlr_last_text = promo_text
+        st.session_state.mlr_last_findings = findings
+        st.session_state.mlr_last_report = report_text
+        st.session_state.mlr_precheck_done = True
+        st.session_state.mlr_ai_summary = ""
+        st.rerun()
 
-        st.success("Pre-check complete.")
-        st.info("This output is generated by a limited deterministic rules engine. It does not determine compliance. Human review is required.")
-        st.caption("Scope limits: text-only demo, no PDF or DOCX support in this step, no final legal or regulatory determination.")
+st.divider()
 
-        st.download_button(
-            label="Download text report",
-            data=report_text,
-            file_name="mlr_precheck_report.txt",
-            mime="text/plain"
-        )
+if not st.session_state.mlr_precheck_done and not promo_text.strip():
+    st.info("Start by loading the sample text or pasting promotional text to evaluate.")
 
-        st.subheader("Findings")
-        if findings:
-            for finding in findings:
-                render_finding(finding)
-                st.divider()
+if st.session_state.mlr_precheck_done:
+    last_text = st.session_state.mlr_last_text
+    findings = st.session_state.mlr_last_findings
+    report_text = st.session_state.mlr_last_report
+
+    st.success("Pre-check complete.")
+    st.info("This output is generated by a limited deterministic rules engine. It does not determine compliance. Human review is required.")
+    st.caption("Scope limits: text-only demo, no PDF or DOCX support in this step, no final legal or regulatory determination.")
+
+    st.download_button(
+        label="Download text report",
+        data=report_text,
+        file_name="mlr_precheck_report.txt",
+        mime="text/plain"
+    )
+
+    st.subheader("Findings")
+    if findings:
+        for finding in findings:
+            render_finding(finding)
+            st.divider()
+    else:
+        st.success("No findings were triggered by the current v1 rule set.")
+
+    st.subheader("AI summary")
+    allowed, ai_message = ai_summary_allowed(last_text)
+    if allowed:
+        if st.button("Generate AI summary"):
+            with st.spinner("Generating AI summary..."):
+                try:
+                    st.session_state.mlr_ai_summary = generate_ai_summary(last_text, findings)
+                    st.rerun()
+                except Exception as e:
+                    st.warning(f"AI summary is temporarily unavailable. Deterministic review remains available. Details: {e}")
         else:
-            st.success("No findings were triggered by the current v1 rule set.")
+            st.caption("AI summary is available for this input under current public-demo limits.")
 
-        st.subheader("AI summary")
-        allowed, ai_message = ai_summary_allowed(promo_text)
-        if allowed:
-            if st.button("Generate AI summary"):
-                st.info(generate_ai_summary_placeholder(promo_text, findings))
-            else:
-                st.caption("AI summary is available for this input under current public-demo limits.")
-        else:
-            st.warning(ai_message)
+        if st.session_state.mlr_ai_summary:
+            st.info(st.session_state.mlr_ai_summary)
+    else:
+        st.warning(ai_message)
 
-        with st.expander("Preview pasted promotional text"):
-            st.write(promo_text[:1200])
+    with st.expander("Preview pasted promotional text"):
+        st.write(last_text[:1200])
 
 st.divider()
 st.markdown("**Run locally via GitHub**")
