@@ -1,7 +1,12 @@
 import os
 import re
+from io import BytesIO
+from datetime import datetime
 import streamlit as st
 import anthropic
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
 
 SAMPLE_TRIAL_ID = "NCT-DEMO-001"
 
@@ -229,6 +234,100 @@ Do not add findings beyond what is listed above.
     return "\n".join(parts).strip() or "AI summary returned no text."
 
 
+
+def build_transparency_report_text(trial_id: str = "") -> str:
+    trial_id = (trial_id or "").strip() or "Not provided"
+    report_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+
+    lines = [
+        "TRANSPARENCY & OVERSIGHT REPORT",
+        "",
+        f"Generated: {report_date}",
+        "",
+        "1. SYSTEM IDENTITY",
+        "- System: Trial-Eligibility-Watchdog",
+        "- Deterministic layer: source of truth for findings in the public demo",
+        "- AI layer: optional assistive summary only; it does not replace deterministic findings",
+        "",
+        "2. STRUCTURED INPUT",
+        f"- Trial identifier / NCT ID: {trial_id}",
+        "",
+        "3. HOW THE SYSTEM WORKS",
+        "- The deterministic engine checks eligibility text against a fixed heuristic ruleset.",
+        "- The AI layer summarizes deterministic findings in plain language.",
+        "- Human review remains required.",
+        "",
+        "4. HUMAN OVERSIGHT",
+        "- This tool is assistive only.",
+        "- It does not determine feasibility, protocol approval, or regulatory acceptability.",
+        "- A qualified human reviewer must review all output before use.",
+        "",
+        "5. DATA HANDLING",
+        "- Public demo inputs are processed to generate the current output.",
+        "- Do not submit patient, personal, or confidential commercial data.",
+        "- This report is a transparency artifact, not a declaration of conformity.",
+        "",
+        "6. PUBLIC DEMO LIMITS",
+        "- Paste plain text only",
+        "- English only",
+        "- Deterministic review up to 12,000 characters",
+        "- AI summary limited to smaller public-demo inputs",
+        "- No PDF or DOCX support in the public demo",
+        "",
+        "7. ACCOUNTABILITY",
+        "- Final accountability remains with the deploying organization and human reviewer.",
+        "",
+        "8. SUPPORT",
+        "- Having issues? drop us an email: hello@lippershey.co",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def build_transparency_report_pdf(trial_id: str = "") -> bytes:
+    report_text = build_transparency_report_text(trial_id)
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    left = 18 * mm
+    top = height - 18 * mm
+    line_height = 6 * mm
+    y = top
+
+    c.setTitle("Trial-Eligibility-Watchdog Transparency & Oversight Report")
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(left, y, "Trial-Eligibility-Watchdog Transparency & Oversight Report")
+    y -= 10 * mm
+
+    c.setFont("Helvetica", 10)
+
+    for raw_line in report_text.splitlines():
+        line = raw_line if raw_line.strip() else " "
+        wrapped = []
+        max_chars = 95
+
+        while len(line) > max_chars:
+            split_at = line.rfind(" ", 0, max_chars)
+            if split_at == -1:
+                split_at = max_chars
+            wrapped.append(line[:split_at].rstrip())
+            line = line[split_at:].lstrip()
+        wrapped.append(line)
+
+        for part in wrapped:
+            if y < 18 * mm:
+                c.showPage()
+                c.setFont("Helvetica", 10)
+                y = top
+            c.drawString(left, y, part)
+            y -= line_height
+
+    c.save()
+    buffer.seek(0)
+    return buffer.read()
+
+
 def render_risk_badge(risk_level: str):
     if risk_level == "High":
         st.error(f"Risk level: {risk_level}")
@@ -314,6 +413,22 @@ with st.expander("Public demo policy", expanded=False):
 
 top_col1, top_col2, top_col3 = st.columns([1, 1, 3])
 
+
+with st.expander("Transparency & oversight", expanded=False):
+    st.markdown("""
+This app can generate a **Transparency & Oversight Report** describing:
+
+- the system identity
+- deterministic vs AI summary roles
+- human oversight expectations
+- public-demo limits
+- data-handling cautions
+- support contact
+
+This is a transparency artifact for stakeholders.  
+It is **not** a declaration of conformity and **not** a legal approval.
+    """)
+
 with top_col1:
     if st.button("Load sample text"):
         st.session_state.tew_trial_id = SAMPLE_TRIAL_ID
@@ -388,6 +503,15 @@ if st.session_state.tew_done:
         data=report_text,
         file_name="trial_eligibility_watchdog_report.txt",
         mime="text/plain"
+    )
+
+    transparency_pdf = build_transparency_report_pdf(last_trial_id)
+
+    st.download_button(
+        label="Download Transparency & Oversight Report (PDF)",
+        data=transparency_pdf,
+        file_name="trial_eligibility_watchdog_transparency_report.pdf",
+        mime="application/pdf"
     )
 
     st.subheader("Findings")
