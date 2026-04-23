@@ -1,5 +1,7 @@
+import os
 import re
 import streamlit as st
+import anthropic
 
 SAMPLE_TRIAL_ID = "NCT-DEMO-001"
 
@@ -167,6 +169,64 @@ def generate_ai_summary_placeholder(trial_id: str, findings: list[dict]) -> str:
     lines.append("")
     lines.append("Human review is still required.")
     return "\n".join(lines)
+
+
+def generate_ai_summary(trial_id: str, eligibility_text: str, findings: list[dict]) -> str:
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return "AI summary is not available because ANTHROPIC_API_KEY is not set on this runtime."
+
+    findings_text = "\n".join(
+        [
+            f"- {f['title']} | Risk: {f['risk_level']} | Why: {f['why_flagged']} | Rule: {f['rule_reference']}"
+            for f in findings
+        ]
+    ) or "- No deterministic findings triggered."
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    system_prompt = (
+        "You are an assistive reviewer summarizer for clinical trial eligibility criteria. "
+        "You must summarize only the deterministic findings provided to you. "
+        "Do not invent new findings. "
+        "Do not state PASS or FAIL. "
+        "Do not state the criteria are approved, feasible, or compliant. "
+        "Keep the output concise, practical, and plain-English. "
+        "End by stating that human review is required."
+    )
+
+    user_prompt = f"""
+Trial identifier:
+{trial_id or "Not provided"}
+
+Eligibility text:
+{eligibility_text}
+
+Deterministic findings:
+{findings_text}
+
+Please produce:
+1. A short summary of the main review concerns
+2. A short section called "Likely reviewer focus"
+3. A short section called "Suggested next step"
+
+Do not add findings beyond what is listed above.
+"""
+
+    message = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=700,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_prompt}],
+    )
+
+    parts = []
+    for block in message.content:
+        block_text = getattr(block, "text", None)
+        if block_text:
+            parts.append(block_text)
+
+    return "\n".join(parts).strip() or "AI summary returned no text."
 
 
 def render_risk_badge(risk_level: str):
@@ -342,9 +402,17 @@ if st.session_state.tew_done:
     allowed, ai_message = ai_summary_allowed(last_text)
     if allowed:
         if st.button("Generate AI summary"):
-            st.info(generate_ai_summary_placeholder(last_trial_id, findings))
+            with st.spinner("Generating AI summary..."):
+                try:
+                    st.session_state.tew_ai_summary = generate_ai_summary(last_trial_id, last_text, findings)
+                    st.rerun()
+                except Exception as e:
+                    st.warning(f"AI summary is temporarily unavailable. Deterministic review remains available. Details: {e}")
         else:
             st.caption("AI summary is available for this input under current public-demo limits.")
+
+        if st.session_state.tew_ai_summary:
+            st.info(st.session_state.tew_ai_summary)
     else:
         st.warning(ai_message)
 
