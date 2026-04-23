@@ -185,7 +185,31 @@ def detect_potential_prohibited_practice(text: str):
     return None, None
 
 
-def detect_readiness(use_case_text: str) -> list[dict]:
+def detect_potential_high_risk_employment_use_case(text: str):
+    lower_text = text.lower()
+
+    employment_terms = [
+        "hiring",
+        "promotion",
+        "promotions",
+        "promotion consideration",
+        "shortlisting",
+        "shortlist",
+        "employee productivity",
+        "engagement scores",
+        "culture fit",
+        "workers management",
+        "employee evaluation",
+        "performance",
+        "hr optimization",
+        "manager nominations",
+    ]
+
+    matched = next((term for term in employment_terms if term in lower_text), None)
+    return matched
+
+
+def detect_readiness(use_case_text: str):
     areas = [
         "Human oversight",
         "Risk management",
@@ -198,11 +222,12 @@ def detect_readiness(use_case_text: str) -> list[dict]:
         "Post-market monitoring / incident handling",
     ]
 
-    findings = []
+    escalation_flags = []
+    readiness_findings = []
 
     matched_emotion, matched_workplace = detect_potential_prohibited_practice(use_case_text)
     if matched_emotion and matched_workplace:
-        findings.append({
+        escalation_flags.append({
             "title": "Potential prohibited practice detected",
             "status": "Missing",
             "why_flagged": f'The submitted use case appears to combine emotion-recognition or affect-inference language ("{matched_emotion}") with workplace or employment context ("{matched_workplace}"), which may fall into a prohibited-practice area and should be escalated for legal review.',
@@ -214,13 +239,25 @@ def detect_readiness(use_case_text: str) -> list[dict]:
 
     oversight_contradiction = detect_human_oversight_contradiction(use_case_text)
     if oversight_contradiction:
-        findings.append({
+        escalation_flags.append({
             "title": "Potential mandatory oversight gap detected",
             "status": "Missing",
             "why_flagged": f'The submitted use case appears to deny or bypass meaningful human oversight ("{oversight_contradiction}"), which may create a significant oversight gap.',
             "matched_text": find_snippet(use_case_text, oversight_contradiction),
             "reference_area": "EU AI Act — Human oversight",
             "recommended_next_action": "Add explicit human oversight controls, review checkpoints, and accountable human decision authority before relying on the system in practice.",
+            "review_note": "Human review required."
+        })
+
+    employment_match = detect_potential_high_risk_employment_use_case(use_case_text)
+    if employment_match:
+        escalation_flags.append({
+            "title": "Potential high-risk employment use case",
+            "status": "Missing",
+            "why_flagged": f'The submitted use case appears to involve employment or worker-management functions ("{employment_match}"), which may fall into a high-risk use-case area and should be escalated for legal and compliance review.',
+            "matched_text": find_snippet(use_case_text, employment_match),
+            "reference_area": "EU AI Act — potential high-risk employment use case",
+            "recommended_next_action": "Escalate for legal and compliance review. Confirm whether the system falls into a high-risk employment category and whether the required controls and documentation are in place.",
             "review_note": "Human review required."
         })
 
@@ -232,7 +269,7 @@ def detect_readiness(use_case_text: str) -> list[dict]:
             "Missing": "Add a formal description and retained evidence for this readiness area.",
         }[result["status"]]
 
-        findings.append({
+        readiness_findings.append({
             "title": area,
             "status": result["status"],
             "why_flagged": result["why_flagged"],
@@ -242,7 +279,7 @@ def detect_readiness(use_case_text: str) -> list[dict]:
             "review_note": "Human review required.",
         })
 
-    return findings
+    return escalation_flags, readiness_findings
 
 
 def compute_score(findings: list[dict]) -> tuple[int, int, int, float]:
@@ -253,8 +290,8 @@ def compute_score(findings: list[dict]) -> tuple[int, int, int, float]:
     return present, partial, missing, score
 
 
-def build_report(use_case_text: str, findings: list[dict]) -> str:
-    present, partial, missing, score = compute_score(findings)
+def build_report(use_case_text: str, escalation_flags: list[dict], readiness_findings: list[dict]) -> str:
+    present, partial, missing, score = compute_score(readiness_findings)
 
     report = []
     report.append("EU-AI-ACT-READINESS REPORT")
@@ -268,15 +305,28 @@ def build_report(use_case_text: str, findings: list[dict]) -> str:
     report.append(f"Use-case description length: {len(use_case_text)} characters")
     report.append("")
     report.append("READINESS SUMMARY")
-    report.append(f"Findings reported: {len(findings)}")
+    report.append(f"Readiness areas checked: {len(readiness_findings)}")
     report.append(f"Present: {present}")
     report.append(f"Partial: {partial}")
     report.append(f"Missing: {missing}")
-    report.append(f"Readiness score: {score:.1f}/{len(findings)}")
+    report.append(f"Readiness score: {score:.1f}/{len(readiness_findings)}")
+    report.append(f"Escalation flags triggered: {len(escalation_flags)}")
     report.append("")
-    report.append("READINESS RESULTS")
 
-    for i, finding in enumerate(findings, start=1):
+    if escalation_flags:
+        report.append("ESCALATION FLAGS")
+        for i, finding in enumerate(escalation_flags, start=1):
+            report.append(f"{i}. {finding['title']}")
+            report.append(f"   Status: {finding['status']}")
+            report.append(f"   Why flagged: {finding['why_flagged']}")
+            report.append(f"   Matched text: {finding['matched_text']}")
+            report.append(f"   Reference area: {finding['reference_area']}")
+            report.append(f"   Recommended next action: {finding['recommended_next_action']}")
+            report.append(f"   Review note: {finding['review_note']}")
+            report.append("")
+
+    report.append("READINESS RESULTS")
+    for i, finding in enumerate(readiness_findings, start=1):
         report.append(f"{i}. {finding['title']}")
         report.append(f"   Status: {finding['status']}")
         report.append(f"   Why flagged: {finding['why_flagged']}")
@@ -535,6 +585,7 @@ defaults = {
     "euai_text": "",
     "euai_done": False,
     "euai_last_text": "",
+    "euai_last_escalation_flags": [],
     "euai_last_findings": [],
     "euai_last_report": "",
     "euai_ai_summary": "",
@@ -617,6 +668,7 @@ with top_col2:
         st.session_state.euai_text = ""
         st.session_state.euai_done = False
         st.session_state.euai_last_text = ""
+        st.session_state.euai_last_escalation_flags = []
         st.session_state.euai_last_findings = []
         st.session_state.euai_last_report = ""
         st.session_state.euai_ai_summary = ""
@@ -640,11 +692,12 @@ if st.button("Run readiness check"):
         st.error("Public demo limit reached: this text exceeds 12,000 characters. For larger governance materials or supported workflows, contact us for pricing.")
         st.session_state.euai_done = False
     else:
-        findings = detect_readiness(use_case_text)
-        report_text = build_report(use_case_text, findings)
+        escalation_flags, findings = detect_readiness(use_case_text)
+        report_text = build_report(use_case_text, escalation_flags, findings)
         st.session_state.euai_last_text = use_case_text
         st.session_state.euai_last_findings = findings
         st.session_state.euai_last_report = report_text
+        st.session_state.euai_last_escalation_flags = escalation_flags
         st.session_state.euai_done = True
         st.session_state.euai_ai_summary = ""
         st.rerun()
@@ -656,6 +709,7 @@ if not st.session_state.euai_done and not use_case_text.strip():
 
 if st.session_state.euai_done:
     last_text = st.session_state.euai_last_text
+    escalation_flags = st.session_state.euai_last_escalation_flags
     findings = st.session_state.euai_last_findings
     report_text = st.session_state.euai_last_report
     present, partial, missing, score = compute_score(findings)
@@ -664,7 +718,7 @@ if st.session_state.euai_done:
     st.info("This output is generated by a limited deterministic checklist engine. It does not determine legal compliance. Human review is required.")
     st.caption("Scope limits: text-only demo, no PDF or DOCX support in this step, no legal determination or definitive compliance classification.")
 
-    st.write(f"**Readiness summary:** Present: {present} | Partial: {partial} | Missing: {missing} | Score: {score:.1f}/{len(findings)}")
+    st.write(f"**Readiness summary:** Present: {present} | Partial: {partial} | Missing: {missing} | Score: {score:.1f}/{len(findings)} | Escalation flags: {len(escalation_flags)}")
 
     st.download_button(
         label="Download text report",
@@ -681,6 +735,12 @@ if st.session_state.euai_done:
         file_name="eu_ai_act_readiness_transparency_report.pdf",
         mime="application/pdf"
     )
+
+    if escalation_flags:
+        st.subheader("Escalation flags")
+        for finding in escalation_flags:
+            render_finding(finding)
+            st.divider()
 
     st.subheader("Findings")
     if findings:
