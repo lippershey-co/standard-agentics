@@ -665,6 +665,46 @@ def render_structured_ai_summary(summary_text: str):
     st.warning("Human review is required.")
 
 
+
+def render_private_pilot_locked_section(title: str, description: str):
+    st.markdown(
+        f"""
+        <div style="
+            border: 1px solid rgba(255,255,255,0.10);
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+            background-color: rgba(255,255,255,0.02);
+        ">
+            <div style="
+                font-size: 1.0rem;
+                font-weight: 700;
+                color: #E5E7EB;
+                margin-bottom: 6px;
+            ">
+                🔒 {title}
+            </div>
+            <div style="
+                font-size: 0.92rem;
+                color: #A1A1AA;
+                margin-bottom: 10px;
+            ">
+                <strong>Private Pilot feature</strong>
+            </div>
+            <div style="
+                font-size: 0.97rem;
+                line-height: 1.6;
+                color: #D4D4D8;
+                margin-bottom: 12px;
+            ">
+                {description}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_status_badge(status: str):
     if status == "Present":
         st.success(f"Status: {status}")
@@ -686,6 +726,97 @@ def render_finding(finding: dict):
     st.write(f"**Review note:** {finding['review_note']}")
 
 
+def generate_check_how_we_did_report(
+    app_name: str,
+    user_input: str,
+    deterministic_findings: list,
+    ai_summary: str,
+    overall_assessment: str,
+    why_assessment: str,
+    caught_well: list,
+    may_have_missed: list,
+    recommended_improvements: list,
+) -> str:
+    lines = []
+
+    lines.append("CHECK HOW WELL WE DID")
+    lines.append("")
+    lines.append(f"App: {app_name}")
+    lines.append("")
+    lines.append("Here is our self-review of this result. This review is designed to show what the tool handled well, where it may still have gaps, and what improvements may be worth logging for the next version.")
+    lines.append("")
+
+    lines.append("1. OVERALL ASSESSMENT")
+    lines.append(f"Overall assessment: {overall_assessment}")
+    lines.append("")
+    lines.append("Why:")
+    lines.append(why_assessment.strip())
+    lines.append("")
+
+    lines.append("2. WHAT THE TOOL CAUGHT WELL")
+    if caught_well:
+        for item in caught_well:
+            lines.append(f"- {item}")
+    else:
+        lines.append("- No clear strengths were logged for this result.")
+    lines.append("")
+
+    lines.append("3. WHAT THE TOOL MAY HAVE MISSED")
+    if may_have_missed:
+        for item in may_have_missed:
+            lines.append(f"- {item}")
+    else:
+        lines.append("- No obvious gaps were logged for this result.")
+    lines.append("")
+
+    lines.append("4. RECOMMENDED IMPROVEMENTS FOR THE NEXT VERSION")
+    if recommended_improvements:
+        for i, item in enumerate(recommended_improvements, start=1):
+            lines.append(f"{i}. {item}")
+    else:
+        lines.append("1. No specific improvements were logged for this result.")
+    lines.append("")
+
+    lines.append("5. CONFIDENCE AND LIMITATIONS")
+    lines.append("This self-review is assistive only. It is intended to improve transparency and product quality, not to replace human judgment. It may itself miss issues. Human review is required.")
+    lines.append("")
+
+    lines.append("OPTIONAL CONTEXT")
+    lines.append(f"Input length: {len(user_input)} characters")
+    lines.append(f"Deterministic findings: {len(deterministic_findings)}")
+    lines.append(f"AI summary present: {'Yes' if ai_summary.strip() else 'No'}")
+    lines.append("")
+
+    lines.append("HELP IMPROVE THIS TOOL")
+    lines.append("If you would like, you can share this review back with us for product improvement. Please do not send sensitive, personal, patient, HR, or confidential business data unless you are using an approved private deployment path.")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+def simple_check_how_we_did_assessment(
+    deterministic_findings: list,
+    ai_summary: str,
+    known_gap_count: int = 0,
+):
+    if deterministic_findings and ai_summary.strip() and known_gap_count == 0:
+        return (
+            "Strong result",
+            "The tool caught the main issues, the AI summary added useful context, and no obvious major gaps were logged in this review."
+        )
+
+    if deterministic_findings:
+        return (
+            "Partially strong result",
+            "The tool caught important issues, but there may still be one or more gaps in rule coverage, evidence display, or interpretation that should be reviewed."
+        )
+
+    return (
+        "Needs improvement",
+        "The current result may be missing important logic coverage or may not provide enough useful evidence to support confident review."
+    )
+
+
 st.set_page_config(page_title="EU-AI-Act-Readiness", layout="wide")
 
 defaults = {
@@ -696,6 +827,8 @@ defaults = {
     "euai_last_findings": [],
     "euai_last_report": "",
     "euai_ai_summary": "",
+    "euai_self_review_report": "",
+    "euai_quality_review_open": False,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -874,6 +1007,51 @@ if st.session_state.euai_done:
             render_structured_ai_summary(st.session_state.euai_ai_summary)
     else:
         st.warning(ai_message)
+
+    st.subheader("Result Quality Review")
+    st.caption("Review how this result can be further analyzed in a private deployment, with deeper case-specific quality checks and internal QA support.")
+
+    if st.button("Open Quality Review"):
+        st.session_state.euai_quality_review_open = True
+        st.rerun()
+
+    if st.session_state.get("euai_quality_review_open"):
+        render_private_pilot_locked_section(
+            "Case-Specific Result Assessment",
+            "Access a deeper review of the result quality based on the exact case, workflow, and output."
+        )
+
+        render_private_pilot_locked_section(
+            "What the Tool Handled Well",
+            "See which parts of the result performed well in this specific scenario."
+        )
+
+        render_private_pilot_locked_section(
+            "Confidence and Limitations Review",
+            "Review a more detailed confidence and limitations analysis tied to the exact output."
+        )
+
+        render_private_pilot_locked_section(
+            "Detailed Missed-Issue Analysis",
+            "Reveal likely gaps, blind spots, or under-detected issues based on the specific case."
+        )
+
+        render_private_pilot_locked_section(
+            "Case-Specific Improvement Recommendations",
+            "Unlock more targeted recommendations for improving logic coverage, evidence quality, and reporting."
+        )
+
+        render_private_pilot_locked_section(
+            "Structured Edge-Case Logging",
+            "Capture structured QA feedback for internal review, future tuning, and product-improvement workflows."
+        )
+
+        if st.button("Unlock in Private Pilot"):
+            st.info(
+                "Private Pilot includes private/internal deployment, deeper adaptive review, and structured QA logging. Contact hello@lippershey.co to discuss options."
+            )
+
+
 
     with st.expander("Preview pasted use-case text"):
         st.write(last_text[:1200])
