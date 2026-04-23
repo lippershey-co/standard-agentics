@@ -1,7 +1,12 @@
 import os
 import re
+from io import BytesIO
+from datetime import datetime
 import streamlit as st
 import anthropic
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
 
 SAMPLE_USE_CASE_TEXT = """We use an AI system to screen oncology trial candidates based on structured patient data and clinical notes.
 The system ranks likely eligible patients for manual review by the study team.
@@ -296,6 +301,121 @@ Rules:
     return "\n".join(parts).strip() or "AI summary returned no text."
 
 
+
+def build_transparency_report_text(use_case_text: str = "", findings=None) -> str:
+    report_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    findings = findings or []
+
+    present = sum(1 for f in findings if f.get("status") == "Present")
+    partial = sum(1 for f in findings if f.get("status") == "Partial")
+    missing = sum(1 for f in findings if f.get("status") == "Missing")
+
+    lines = [
+        "TRANSPARENCY & OVERSIGHT REPORT",
+        "",
+        f"Generated: {report_date}",
+        "",
+        "1. SYSTEM IDENTITY",
+        "- System: EU-AI-Act-Readiness",
+        "- Deterministic layer: source of truth for findings in the public demo",
+        "- AI layer: optional assistive summary only; it does not replace deterministic findings",
+        "",
+        "2. INPUT CONTEXT",
+        f"- Use-case text length: {len(use_case_text)} characters",
+        "",
+        "3. HOW THE SYSTEM WORKS",
+        "- The deterministic engine checks use-case text against a fixed EU AI Act readiness checklist.",
+        "- The AI layer summarizes deterministic findings in plain language.",
+        "- Human review remains required.",
+        "",
+        "4. READINESS LOGIC USED IN THIS DEMO",
+        "- Human oversight",
+        "- Risk management",
+        "- Data governance",
+        "- Technical documentation",
+        "- Logging / record-keeping",
+        "- Transparency / instructions for use",
+        "- Accuracy / robustness / validation / monitoring",
+        "- Quality management / governance process",
+        "- Post-market monitoring / incident handling",
+        "",
+        "5. CURRENT READINESS SNAPSHOT",
+        f"- Present: {present}",
+        f"- Partial: {partial}",
+        f"- Missing: {missing}",
+        "",
+        "6. HUMAN OVERSIGHT",
+        "- This tool is assistive only.",
+        "- It does not determine legal compliance.",
+        "- It does not provide legal approval or definitive regulatory classification.",
+        "- A qualified human reviewer must review all output before use.",
+        "",
+        "7. DATA HANDLING",
+        "- Public demo inputs are processed to generate the current output.",
+        "- Do not submit patient, personal, or confidential commercial data.",
+        "- This report is a transparency artifact, not a declaration of conformity.",
+        "",
+        "8. PUBLIC DEMO LIMITS",
+        "- Paste plain text only",
+        "- English only",
+        "- Deterministic review up to 12,000 characters",
+        "- AI summary limited to smaller public-demo inputs",
+        "- No PDF or DOCX support in the public demo",
+        "",
+        "9. ACCOUNTABILITY",
+        "- Final accountability remains with the deploying organization and human reviewer.",
+        "",
+        "10. SUPPORT",
+        "- Having issues? drop us an email: hello@lippershey.co",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def build_transparency_report_pdf(use_case_text: str = "", findings=None) -> bytes:
+    report_text = build_transparency_report_text(use_case_text, findings)
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    left = 18 * mm
+    top = height - 18 * mm
+    line_height = 6 * mm
+    y = top
+
+    c.setTitle("EU-AI-Act-Readiness Transparency & Oversight Report")
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(left, y, "EU-AI-Act-Readiness Transparency & Oversight Report")
+    y -= 10 * mm
+
+    c.setFont("Helvetica", 10)
+
+    for raw_line in report_text.splitlines():
+        line = raw_line if raw_line.strip() else " "
+        wrapped = []
+        max_chars = 95
+
+        while len(line) > max_chars:
+            split_at = line.rfind(" ", 0, max_chars)
+            if split_at == -1:
+                split_at = max_chars
+            wrapped.append(line[:split_at].rstrip())
+            line = line[split_at:].lstrip()
+        wrapped.append(line)
+
+        for part in wrapped:
+            if y < 18 * mm:
+                c.showPage()
+                c.setFont("Helvetica", 10)
+                y = top
+            c.drawString(left, y, part)
+            y -= line_height
+
+    c.save()
+    buffer.seek(0)
+    return buffer.read()
+
+
 def render_status_badge(status: str):
     if status == "Present":
         st.success(f"Status: {status}")
@@ -375,6 +495,22 @@ with st.expander("Public demo policy", expanded=False):
 - Human review required
     """)
 
+
+with st.expander("Transparency & oversight", expanded=False):
+    st.markdown("""
+This app can generate a **Transparency & Oversight Report** describing:
+
+- the system identity
+- deterministic vs AI summary roles
+- human oversight expectations
+- public-demo limits
+- data-handling cautions
+- support contact
+
+This is a transparency artifact for stakeholders.  
+It is **not** a declaration of conformity and **not** a legal approval.
+    """)
+
 top_col1, top_col2, top_col3 = st.columns([1, 1, 3])
 
 with top_col1:
@@ -443,6 +579,15 @@ if st.session_state.euai_done:
         data=report_text,
         file_name="eu_ai_act_readiness_report.txt",
         mime="text/plain"
+    )
+
+    transparency_pdf = build_transparency_report_pdf(last_text, findings)
+
+    st.download_button(
+        label="Download Transparency & Oversight Report (PDF)",
+        data=transparency_pdf,
+        file_name="eu_ai_act_readiness_transparency_report.pdf",
+        mime="application/pdf"
     )
 
     st.subheader("Findings")
