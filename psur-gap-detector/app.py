@@ -138,6 +138,32 @@ def classify_psur_area(text: str, area: dict) -> dict:
         "matched_text": "None detected",
     }
 
+def looks_like_psur_scope(text: str) -> bool:
+    lower_text = text.lower()
+    scope_terms = [
+        "psur",
+        "reporting interval",
+        "worldwide marketing authorization status",
+        "actions taken for safety reasons",
+        "reference safety information",
+        "estimated exposure",
+        "individual case safety data",
+        "signal evaluation",
+        "benefit-risk evaluation",
+        "benefit risk evaluation",
+        "pharmacovigilance",
+    ]
+    return any(term in lower_text for term in scope_terms)
+
+
+def ai_summary_allowed(text: str):
+    if len(text) > 3500:
+        return False, "Deterministic review completed. AI summary is limited to 3,500 characters in the public demo. For larger inputs and extended review support, contact us for pricing."
+    if not looks_like_psur_scope(text):
+        return False, "This public demo AI summary is limited to PSUR, pharmacovigilance, or related safety-report text. For broader document review or custom workflows, contact us for pricing."
+    return True, ""
+
+
 def detect_psur_gaps(text: str):
     findings = []
     table_rows = []
@@ -428,7 +454,11 @@ if st.session_state.psur_done:
         st.info("No completeness rows available from the current v1 rule set.")
 
     st.subheader("AI summary")
-    st.caption("AI summary will be added in the next step.")
+    allowed, ai_message = ai_summary_allowed(last_text)
+    if allowed:
+        st.caption("AI summary is available for this input under current public-demo limits.")
+    else:
+        st.warning(ai_message)
 
     st.divider()
     st.subheader("Result Quality Review")
