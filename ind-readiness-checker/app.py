@@ -1,5 +1,8 @@
+import os
 import re
+import html
 import streamlit as st
+import anthropic
 
 SAMPLE_TEXT = """Program: VX-247 Oncology Asset
 
@@ -216,6 +219,209 @@ def build_report(text: str, findings: list[dict]) -> str:
     report.append("")
     return "\n".join(report)
 
+def generate_ai_summary_placeholder(findings: list[dict]) -> str:
+    if not findings:
+        return (
+            "No deterministic findings were triggered by the current v1 rule set. "
+            "Once connected, the Claude-based AI summary will turn this result into a short plain-language executive note."
+        )
+
+    lines = []
+    lines.append("Claude-based AI summary preview")
+    lines.append("")
+    lines.append("This placeholder shows where the assistive AI summary will appear.")
+    lines.append("It will summarize deterministic findings only, not replace them.")
+    lines.append("")
+    present = sum(1 for f in findings if f["status"] == "Present")
+    partial = sum(1 for f in findings if f["status"] == "Partial")
+    missing = sum(1 for f in findings if f["status"] == "Missing")
+    lines.append(f"Present: {present}")
+    lines.append(f"Partial: {partial}")
+    lines.append(f"Missing: {missing}")
+    lines.append("Top flagged readiness areas:")
+    for finding in findings[:3]:
+        lines.append(f"- {finding['title']} ({finding['status']})")
+    lines.append("")
+    lines.append("Human review is still required.")
+    return "\n".join(lines)
+
+
+def generate_ai_summary(text: str, findings: list[dict]) -> str:
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return "AI summary is not available because ANTHROPIC_API_KEY is not set on this runtime."
+
+    findings_text = "\n".join(
+        [
+            f"- {f['title']} | Status: {f['status']} | Why: {f['why_flagged']} | Matched: {f['matched_text']} | Reference: {f['reference_area']}"
+            for f in findings
+        ]
+    ) or "- No deterministic findings triggered."
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    system_prompt = (
+        "You are an assistive IND-readiness summarizer. "
+        "You must summarize only the deterministic findings provided to you, plus limited clearly grounded interpretation that directly follows from those findings. "
+        "Do not invent new findings. "
+        "Do not state PASS or FAIL. "
+        "Do not state the package is submission-ready, adequate, approved, or final unless that was already explicitly established in the deterministic findings. "
+        "Do not make definitive legal, medical, or regulatory judgments. "
+        "Be concise, practical, and plain-English. "
+        "Your output must use exactly these section headings in this exact order: "
+        "'Main review concerns', 'Likely reviewer focus', 'Suggested next step'. "
+        "End with the exact sentence: 'Human review is required.'"
+    )
+
+    user_prompt = f"""
+Preclinical / IND-readiness text:
+{text}
+
+Deterministic findings:
+{findings_text}
+
+Write the response in this exact structure:
+
+Main review concerns
+<1 short paragraph summarizing the most important deterministic findings and any limited directly grounded interpretation.>
+
+Likely reviewer focus
+<1 short paragraph describing what a reviewer would most likely examine next, based only on the deterministic findings and clearly grounded interpretation.>
+
+Suggested next step
+<1 short paragraph with the most practical next action, based only on the deterministic findings.>
+
+Human review is required.
+
+Rules:
+- Do not add new findings not supported by the deterministic findings.
+- Do not use bullet points.
+- Do not output PASS or FAIL.
+- Do not say the package is submission-ready, adequate, approved, or final.
+- Keep the tone practical and professional.
+"""
+
+    message = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=700,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_prompt}],
+    )
+
+    parts = []
+    for block in message.content:
+        block_text = getattr(block, "text", None)
+        if block_text:
+            parts.append(block_text)
+
+    return "\n".join(parts).strip() or "AI summary returned no text."
+
+
+def parse_structured_ai_summary(summary_text: str) -> dict:
+    if not summary_text:
+        return {}
+
+    pattern = re.compile(
+        r"(Main review concerns|Likely reviewer focus|Suggested next step|Human review is required\.?)",
+        flags=re.IGNORECASE
+    )
+
+    parts = pattern.split(summary_text.strip())
+    sections = {}
+    current_heading = None
+
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+
+        normalized = part.lower().rstrip(".")
+
+        if normalized == "main review concerns":
+            current_heading = "Main review concerns"
+            sections[current_heading] = ""
+        elif normalized == "likely reviewer focus":
+            current_heading = "Likely reviewer focus"
+            sections[current_heading] = ""
+        elif normalized == "suggested next step":
+            current_heading = "Suggested next step"
+            sections[current_heading] = ""
+        elif normalized == "human review is required":
+            current_heading = "Human review is required."
+            sections[current_heading] = ""
+        else:
+            if current_heading:
+                if sections[current_heading]:
+                    sections[current_heading] += " " + part
+                else:
+                    sections[current_heading] = part
+
+    if not sections:
+        sections = {"Main review concerns": summary_text.strip()}
+
+    return sections
+
+
+def render_ai_summary_section(title: str, body: str, accent_color: str):
+    safe_title = html.escape(title)
+    safe_body = html.escape(body).replace("\n", "<br>")
+
+    st.markdown(
+        f"""
+        <div style="
+            border: 1px solid rgba(255,255,255,0.10);
+            border-left: 4px solid {accent_color};
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+            background-color: rgba(255,255,255,0.03);
+        ">
+            <div style="
+                font-size: 1.0rem;
+                font-weight: 700;
+                color: {accent_color};
+                margin-bottom: 8px;
+            ">
+                {safe_title}
+            </div>
+            <div style="
+                font-size: 0.98rem;
+                line-height: 1.65;
+                color: #E5E7EB;
+            ">
+                {safe_body}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_structured_ai_summary(summary_text: str):
+    sections = parse_structured_ai_summary(summary_text)
+
+    color_map = {
+        "Main review concerns": "#60A5FA",
+        "Likely reviewer focus": "#A78BFA",
+        "Suggested next step": "#34D399",
+    }
+
+    for section_name in [
+        "Main review concerns",
+        "Likely reviewer focus",
+        "Suggested next step",
+    ]:
+        body = sections.get(section_name, "").strip()
+        if body:
+            render_ai_summary_section(
+                section_name,
+                body,
+                color_map.get(section_name, "#60A5FA")
+            )
+
+    st.warning("Human review is required.")
+
+
 def render_status_badge(status: str):
     if status == "Present":
         st.success(f"Status: {status}")
@@ -414,7 +620,18 @@ if st.session_state.ind_done:
     st.subheader("AI summary")
     allowed, ai_message = ai_summary_allowed(last_text)
     if allowed:
-        st.caption("AI summary is available for this input under current public-demo limits.")
+        if st.button("Generate AI summary"):
+            with st.spinner("Generating AI summary..."):
+                try:
+                    st.session_state.ind_ai_summary = generate_ai_summary(last_text, findings)
+                    st.rerun()
+                except Exception as e:
+                    st.warning(f"AI summary is temporarily unavailable. Deterministic review remains available. Details: {e}")
+        else:
+            st.caption("AI summary is available for this input under current public-demo limits.")
+
+        if st.session_state.ind_ai_summary:
+            render_structured_ai_summary(st.session_state.ind_ai_summary)
     else:
         st.warning(ai_message)
 
@@ -468,5 +685,5 @@ if st.session_state.ind_done:
 st.divider()
 st.markdown("**Run locally via GitHub**")
 st.markdown("For private or extended use, run the tool locally from the Standard Agentics repository.")
-st.markdown("[Open the Standard Agentics repository](https://github.com/standardagentics)")
+st.markdown("[Open the Standard Agentics repository](https://github.com/lippershey-co/standard-agentics)")
 st.markdown("[Having issues? drop us an email](mailto:hello@lippershey.co)")
