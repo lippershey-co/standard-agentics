@@ -118,6 +118,45 @@ def ai_summary_allowed(text: str) -> tuple[bool, str]:
     return True, ""
 
 
+def detect_potential_prohibited_practice(text: str):
+    lower_text = text.lower()
+
+    emotion_terms = [
+        "emotion recognition",
+        "facial expression",
+        "mood tracking",
+        "collaborative readiness",
+        "sentiment analysis",
+        "webcam snapshots",
+        "engagement scores",
+        "burnout prediction",
+        "quiet quitting",
+    ]
+
+    workplace_terms = [
+        "employee",
+        "employees",
+        "worker",
+        "workplace",
+        "meeting",
+        "meetings",
+        "promotion",
+        "promotions",
+        "hr",
+        "slack",
+        "productivity",
+        "culture fit",
+    ]
+
+    matched_emotion = next((term for term in emotion_terms if term in lower_text), None)
+    matched_workplace = next((term for term in workplace_terms if term in lower_text), None)
+
+    if matched_emotion and matched_workplace:
+        return matched_emotion, matched_workplace
+
+    return None, None
+
+
 def detect_readiness(use_case_text: str) -> list[dict]:
     areas = [
         "Human oversight",
@@ -132,6 +171,19 @@ def detect_readiness(use_case_text: str) -> list[dict]:
     ]
 
     findings = []
+
+    matched_emotion, matched_workplace = detect_potential_prohibited_practice(use_case_text)
+    if matched_emotion and matched_workplace:
+        findings.append({
+            "title": "Potential prohibited practice detected",
+            "status": "Missing",
+            "why_flagged": f'The submitted use case appears to combine emotion-recognition or affect-inference language ("{matched_emotion}") with workplace or employment context ("{matched_workplace}"), which may fall into a prohibited-practice area and should be escalated for legal review.',
+            "matched_text": find_snippet(use_case_text, matched_emotion),
+            "reference_area": "EU AI Act — potential prohibited-practice escalation",
+            "recommended_next_action": "Escalate for immediate legal and compliance review. Do not rely on this public demo as a final legal determination.",
+            "review_note": "Human review required."
+        })
+
     for area in areas:
         result = classify_area(use_case_text, area)
         recommended_action = {
@@ -176,7 +228,7 @@ def build_report(use_case_text: str, findings: list[dict]) -> str:
     report.append(f"Use-case description length: {len(use_case_text)} characters")
     report.append("")
     report.append("READINESS SUMMARY")
-    report.append(f"Readiness areas checked: {len(findings)}")
+    report.append(f"Findings reported: {len(findings)}")
     report.append(f"Present: {present}")
     report.append(f"Partial: {partial}")
     report.append(f"Missing: {missing}")
