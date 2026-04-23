@@ -152,6 +152,28 @@ def build_report(promo_text: str, findings: list[dict]) -> str:
     return "\n".join(report)
 
 
+def generate_ai_summary_placeholder(promo_text: str, findings: list[dict]) -> str:
+    if not findings:
+        return (
+            "No deterministic findings were triggered by the current v1 rule set. "
+            "Once connected, the Claude-based AI summary will turn this result into a short plain-language review note."
+        )
+
+    lines = []
+    lines.append("Claude-based AI summary preview")
+    lines.append("")
+    lines.append("This placeholder shows where the assistive AI summary will appear.")
+    lines.append("It will summarize deterministic findings only, not replace them.")
+    lines.append("")
+    lines.append(f"Number of deterministic findings: {len(findings)}")
+    lines.append("Top flagged issues:")
+    for finding in findings[:3]:
+        lines.append(f"- {finding['title']} ({finding['risk_level']})")
+    lines.append("")
+    lines.append("Human review is still required.")
+    return "\n".join(lines)
+
+
 def render_risk_badge(risk_level: str):
     if risk_level == "High":
         st.error(f"Risk level: {risk_level}")
@@ -279,10 +301,13 @@ if run_clicked:
         else:
             st.success("No findings were triggered by the current v1 rule set.")
 
-        st.subheader("AI summary (public demo preview)")
+        st.subheader("AI summary")
         allowed, ai_message = ai_summary_allowed(promo_text)
         if allowed:
-            st.info("Claude-based AI summary will appear here once connected. It will summarize the deterministic findings only and will remain subject to public-demo limits.")
+            if st.button("Generate AI summary"):
+                st.info(generate_ai_summary_placeholder(promo_text, findings))
+            else:
+                st.caption("AI summary is available for this input under current public-demo limits.")
         else:
             st.warning(ai_message)
 
