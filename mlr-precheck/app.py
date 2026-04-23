@@ -22,6 +22,12 @@ OFF_LABEL_TERMS = [
     "unapproved", "not approved", "off-label", "unlicensed"
 ]
 
+ONCOLOGY_SCOPE_TERMS = [
+    "oncology", "tumor", "tumours", "cancer", "solid tumor", "solid tumour",
+    "survival", "patients", "treatment", "therapy", "trial", "study",
+    "efficacy", "safety", "prescribing information", "adverse"
+]
+
 
 def split_sentences(text: str) -> list[str]:
     text = " ".join(text.split())
@@ -39,6 +45,19 @@ def find_snippet(text: str, keyword: str, window: int = 160) -> str:
     start = max(0, idx - 40)
     end = min(len(text), idx + window)
     return text[start:end].strip()
+
+
+def looks_like_oncology_scope(text: str) -> bool:
+    lower_text = text.lower()
+    return any(term in lower_text for term in ONCOLOGY_SCOPE_TERMS)
+
+
+def ai_summary_allowed(text: str) -> tuple[bool, str]:
+    if len(text) > 3500:
+        return False, "Deterministic review completed. AI summary is limited to 3,500 characters in the public demo. For larger inputs and extended review support, contact us for pricing."
+    if not looks_like_oncology_scope(text):
+        return False, "This public demo AI summary is limited to oncology promotional or claim-review text. For broader document review or custom workflows, contact us for pricing."
+    return True, ""
 
 
 def detect_findings(text: str) -> list[dict]:
@@ -176,7 +195,7 @@ This AI layer is **assistive only**. It does not replace the deterministic findi
 - Paste plain text only
 - Oncology promotional / claim-review text only
 - Deterministic review: up to 12,000 characters
-- AI summary: limited to smaller inputs and restricted public-demo usage
+- AI summary: limited to 3,500 characters and restricted public-demo usage
 - No PDF or DOCX support in the public demo
 - No patient, personal, or confidential commercial data
 
@@ -261,10 +280,11 @@ if run_clicked:
             st.success("No findings were triggered by the current v1 rule set.")
 
         st.subheader("AI summary (public demo preview)")
-        if len(promo_text) > 3500:
-            st.warning("Deterministic review completed. AI summary is limited to 3,500 characters in the public demo. For larger inputs and extended review support, contact us for pricing.")
-        else:
+        allowed, ai_message = ai_summary_allowed(promo_text)
+        if allowed:
             st.info("Claude-based AI summary will appear here once connected. It will summarize the deterministic findings only and will remain subject to public-demo limits.")
+        else:
+            st.warning(ai_message)
 
         with st.expander("Preview pasted promotional text"):
             st.write(promo_text[:1200])
