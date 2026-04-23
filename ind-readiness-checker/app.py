@@ -119,6 +119,33 @@ def classify_readiness_area(text: str, area: dict) -> dict:
         "matched_text": "None detected",
     }
 
+def looks_like_ind_scope(text: str) -> bool:
+    lower_text = text.lower()
+    scope_terms = [
+        "ind submission",
+        "nonclinical",
+        "toxicology",
+        "repeat-dose tox",
+        "safety pharmacology",
+        "genotoxicity",
+        "pk summary",
+        "bioanalytical",
+        "drug substance",
+        "drug product",
+        "stability data",
+        "cmc",
+    ]
+    return any(term in lower_text for term in scope_terms)
+
+
+def ai_summary_allowed(text: str):
+    if len(text) > 3500:
+        return False, "Deterministic review completed. AI summary is limited to 3,500 characters in the public demo. For larger inputs and extended review support, contact us for pricing."
+    if not looks_like_ind_scope(text):
+        return False, "This public demo AI summary is limited to preclinical, CMC, or IND-readiness text. For broader document review or custom workflows, contact us for pricing."
+    return True, ""
+
+
 def detect_ind_readiness(text: str) -> list[dict]:
     findings = []
 
@@ -385,7 +412,11 @@ if st.session_state.ind_done:
         st.success("No findings were triggered by the current v1 rule set.")
 
     st.subheader("AI summary")
-    st.caption("AI summary will be added in the next step.")
+    allowed, ai_message = ai_summary_allowed(last_text)
+    if allowed:
+        st.caption("AI summary is available for this input under current public-demo limits.")
+    else:
+        st.warning(ai_message)
 
     st.divider()
     st.subheader("Result Quality Review")
