@@ -168,15 +168,15 @@ This tool first runs a deterministic Python rules engine.
 It checks the submitted text against a fixed set of known promotional-risk patterns and reference areas.  
 This deterministic layer is the **source of truth** for findings shown in the public demo.
 
-### Claude-based AI summary (optional, coming next)
-An optional Claude-based AI summary layer can be added to rewrite deterministic findings into a more readable review note.  
+### Claude-based AI summary
+An optional Claude-based AI summary layer can rewrite deterministic findings into a more readable review note.  
 This AI layer is **assistive only**. It does not replace the deterministic findings or human review.
 
 ### Public demo limits
 - Paste plain text only
 - Oncology promotional / claim-review text only
 - Deterministic review: up to 12,000 characters
-- Future AI summary layer: smaller input cap and limited daily usage
+- AI summary: limited to smaller inputs and restricted public-demo usage
 - No PDF or DOCX support in the public demo
 - No patient, personal, or confidential commercial data
 
@@ -188,6 +188,7 @@ with st.expander("How to use", expanded=False):
 1. Paste promotional text into the input box
 2. Click **Run pre-check**
 3. Review the flagged findings and rule references
+4. Optionally generate an AI summary within public demo limits
     """)
 
 with st.expander("Public demo policy", expanded=False):
@@ -258,6 +259,12 @@ if run_clicked:
                 st.divider()
         else:
             st.success("No findings were triggered by the current v1 rule set.")
+
+        st.subheader("AI summary (public demo preview)")
+        if len(promo_text) > 3500:
+            st.warning("Deterministic review completed. AI summary is limited to 3,500 characters in the public demo. For larger inputs and extended review support, contact us for pricing.")
+        else:
+            st.info("Claude-based AI summary will appear here once connected. It will summarize the deterministic findings only and will remain subject to public-demo limits.")
 
         with st.expander("Preview pasted promotional text"):
             st.write(promo_text[:1200])
