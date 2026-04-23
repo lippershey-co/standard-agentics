@@ -2,15 +2,24 @@ import os
 import re
 import streamlit as st
 import anthropic
+from io import BytesIO
+from datetime import datetime
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
 
 SAMPLE_PROMO_TEXT = """Drug X significantly improved progression-free survival in adult patients with advanced solid tumors.
 This breakthrough therapy was well tolerated and offers superior disease control.
 See full prescribing information for warnings and precautions.
 """
 
+SAMPLE_APPROVED_INDICATION = "Advanced solid tumors"
+
 SUPERLATIVE_TERMS = [
-    "best", "breakthrough", "safer", "superior", "guaranteed",
-    "guarantees", "unique", "unmatched", "leading", "most effective"
+    "best", "best-in-class", "breakthrough", "revolutionary", "safer", "superior",
+    "guaranteed", "guarantees", "unique", "unmatched", "leading",
+    "most effective", "unprecedented", "unrivaled", "extraordinary",
+    "transformative", "game-changing", "first and only", "better tolerated"
 ]
 
 RISK_TERMS = [
@@ -19,9 +28,50 @@ RISK_TERMS = [
     "contraindication", "contraindications"
 ]
 
+SAFETY_SIGNAL_TERMS = [
+    "safety", "safety note", "safety information", "safety signals",
+    "adverse event", "adverse events", "ae", "aes", "toxicity",
+    "toxicities", "rash", "diarrhea", "diarrhoea", "edema", "myalgia",
+    "ild", "pneumonitis", "withheld", "withhold", "discontinued",
+    "discontinuation", "contraindication", "warning", "precaution"
+]
+
 OFF_LABEL_TERMS = [
     "pediatric", "children", "adolescent", "pregnant", "pregnancy",
     "unapproved", "not approved", "off-label", "unlicensed"
+]
+
+SUBGROUP_TERMS = [
+    "post-hoc", "post hoc", "subgroup", "subgroup analysis", "exploratory analysis"
+]
+
+UNIVERSAL_CLAIM_TERMS = [
+    "100%", "all patients", "every patient", "universal"
+]
+
+RESPONSE_TERMS = [
+    "tumor shrinkage", "response", "orr", "benefit"
+]
+
+CURRENT_INDICATION_TERMS = [
+    "current indication", "currently indicated", "approved", "metastatic"
+]
+
+EARLY_STAGE_TERMS = [
+    "early-stage", "early stage", "neoadjuvant", "pre-surgery", "pre surgery",
+    "adjuvant", "resection", "surgical resection", "pre-surgical", "curative", "cure"
+]
+
+WEAK_EVIDENCE_TERMS = [
+    "pilot study", "focus group", "investigator-initiated", "investigator initiated",
+    "post-hoc", "post hoc", "exploratory", "small study"
+]
+
+COMPARATIVE_TERMS = [
+    "unlike", "compared to", "versus", "traditional", "earlier therapies",
+    "first-gen", "first generation", "next-generation", "next generation",
+    "more refined", "pharmacokinetic advantage", "improved penetration",
+    "better tolerated", "minimizes off-target binding", "advantage over"
 ]
 
 ONCOLOGY_SCOPE_TERMS = [
@@ -39,15 +89,71 @@ def split_sentences(text: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
-def find_snippet(text: str, keyword: str, window: int = 160) -> str:
-    lower_text = text.lower()
-    idx = lower_text.find(keyword.lower())
-    if idx == -1:
-        return ""
-    start = max(0, idx - 40)
-    end = min(len(text), idx + window)
-    return text[start:end].strip()
+def find_snippet(text: str, keyword: str, max_len: int = 260) -> str:
+    """
+    Return a cleaner snippet around the first keyword match.
 
+    Strategy:
+    1. Find the first keyword match, case-insensitive
+    2. Prefer the full line / bullet / paragraph containing the match
+    3. If too short, expand to nearby sentence boundaries
+    4. Strip markdown artifacts and normalize whitespace
+    """
+    if not text or not keyword:
+        return ""
+
+    match = re.search(re.escape(keyword), text, flags=re.IGNORECASE)
+    if not match:
+        return ""
+
+    start_idx, end_idx = match.start(), match.end()
+
+    line_start = text.rfind("\n", 0, start_idx)
+    line_end = text.find("\n", end_idx)
+
+    line_start = 0 if line_start == -1 else line_start + 1
+    line_end = len(text) if line_end == -1 else line_end
+
+    snippet = text[line_start:line_end].strip()
+
+    if len(snippet) < 60:
+        left_candidates = [
+            text.rfind(". ", 0, start_idx),
+            text.rfind("? ", 0, start_idx),
+            text.rfind("! ", 0, start_idx),
+            text.rfind("\n\n", 0, start_idx),
+            text.rfind("\n", 0, start_idx),
+        ]
+        left = max(left_candidates)
+        left = 0 if left == -1 else left + 1
+
+        right_candidates = [
+            text.find(". ", end_idx),
+            text.find("? ", end_idx),
+            text.find("! ", end_idx),
+            text.find("\n\n", end_idx),
+            text.find("\n", end_idx),
+        ]
+        right_candidates = [x for x in right_candidates if x != -1]
+        right = min(right_candidates) if right_candidates else len(text)
+
+        snippet = text[left:right].strip()
+
+    if len(snippet) < 40:
+        window_left = max(0, start_idx - 100)
+        window_right = min(len(text), end_idx + 180)
+        snippet = text[window_left:window_right].strip()
+
+    snippet = snippet.replace("**", "")
+    snippet = snippet.replace("__", "")
+    snippet = snippet.replace("```", "")
+    snippet = re.sub(r'^[>\-\*\#\s]+', '', snippet)
+    snippet = re.sub(r'\s+', ' ', snippet).strip()
+
+    if len(snippet) > max_len:
+        snippet = snippet[:max_len].rsplit(" ", 1)[0] + "..."
+
+    return snippet
 
 def looks_like_oncology_scope(text: str) -> bool:
     lower_text = text.lower()
@@ -62,9 +168,17 @@ def ai_summary_allowed(text: str) -> tuple[bool, str]:
     return True, ""
 
 
-def detect_findings(text: str) -> list[dict]:
+def get_conflict_source_text(promo_text: str, approved_indication: str) -> str:
+    approved_indication = (approved_indication or "").strip()
+    if approved_indication:
+        return approved_indication.lower()
+    return promo_text.lower()
+
+
+def detect_findings(text: str, approved_indication: str = "") -> list[dict]:
     findings = []
     lower_text = text.lower()
+    conflict_source_text = get_conflict_source_text(text, approved_indication)
     sentences = split_sentences(text)
 
     benefit_keywords = ["improved", "effective", "efficacy", "benefit", "response", "survival"]
@@ -81,17 +195,27 @@ def detect_findings(text: str) -> list[dict]:
             "review_note": "Human review required."
         })
 
-    for term in SUPERLATIVE_TERMS:
-        if term in lower_text:
-            findings.append({
-                "title": "Absolute or superlative promotional language",
-                "risk_level": "Medium",
-                "why_flagged": f'The term "{term}" may overstate the claim or imply superiority without substantiation in the visible text.',
-                "matched_text": find_snippet(text, term),
-                "rule_reference": "FDA 21 CFR Part 202 / EU Directive 2001/83/EC Articles 87 and 89",
-                "review_note": "Human review required."
-            })
-            break
+    matched_superlatives = [term for term in SUPERLATIVE_TERMS if term in lower_text]
+    if matched_superlatives:
+        findings.append({
+            "title": "Absolute, superlative, or superiority promotional language",
+            "risk_level": "Medium",
+            "why_flagged": "The text contains promotional language that may overstate benefit or imply superiority without substantiation in the visible text. Matched terms: " + ", ".join(matched_superlatives[:8]),
+            "matched_text": find_snippet(text, matched_superlatives[0]),
+            "rule_reference": "FDA 21 CFR Part 202 / EU Directive 2001/83/EC Articles 87 and 89",
+            "review_note": "Human review required."
+        })
+
+    matched_comparatives = [term for term in COMPARATIVE_TERMS if term in lower_text]
+    if matched_comparatives:
+        findings.append({
+            "title": "Implied comparative or superiority framing",
+            "risk_level": "Medium",
+            "why_flagged": "The text uses comparative or implied superiority framing that may require strong substantiation, especially if no head-to-head evidence is presented. Matched terms: " + ", ".join(matched_comparatives[:8]),
+            "matched_text": find_snippet(text, matched_comparatives[0]),
+            "rule_reference": "FDA 21 CFR Part 202 / EU Directive 2001/83/EC Articles 87 and 89",
+            "review_note": "Human review required."
+        })
 
     for term in OFF_LABEL_TERMS:
         if term in lower_text:
@@ -105,12 +229,93 @@ def detect_findings(text: str) -> list[dict]:
             })
             break
 
-    caution_present = any(term in lower_text for term in ["warning", "warnings", "precaution", "precautions"])
-    if not caution_present:
+    subgroup_hit = next((term for term in SUBGROUP_TERMS if term in lower_text), None)
+    universal_hit = next((term for term in UNIVERSAL_CLAIM_TERMS if term in lower_text), None)
+    response_hit = next((term for term in RESPONSE_TERMS if term in lower_text), None)
+
+    if subgroup_hit and universal_hit:
+        why = (
+            f'The text combines subgroup or post-hoc evidence framing ("{subgroup_hit}") '
+            f'with universal or near-universal claim language ("{universal_hit}")'
+        )
+        if response_hit:
+            why += f' and response-oriented wording ("{response_hit}")'
+        why += ", which may overstate the strength or generalizability of the evidence."
+
+        findings.append({
+            "title": "High-risk subgroup or post-hoc evidence framing",
+            "risk_level": "High",
+            "why_flagged": why,
+            "matched_text": find_snippet(text, subgroup_hit),
+            "rule_reference": "FDA 21 CFR Part 202 / EU Directive 2001/83/EC Articles 87 and 89",
+            "review_note": "Human review required."
+        })
+
+    current_indication_hit = next((term for term in CURRENT_INDICATION_TERMS if term in conflict_source_text), None)
+    early_stage_hit = next((term for term in EARLY_STAGE_TERMS if term in lower_text), None)
+
+    if current_indication_hit and early_stage_hit:
+        source_label = approved_indication.strip() if approved_indication.strip() else current_indication_hit
+        findings.append({
+            "title": "Potential indication mismatch or off-label use framing",
+            "risk_level": "High",
+            "why_flagged": f'The structured approved indication / labeled setting ("{source_label}") appears inconsistent with promoted treatment-setting language in the body ("{early_stage_hit}"), which may indicate off-label framing or indication drift.',
+            "matched_text": find_snippet(text, early_stage_hit),
+            "rule_reference": "FDA 21 CFR Part 202 / EU Directive 2001/83/EC Articles 87 and 89",
+            "review_note": "Human review required."
+        })
+
+    weak_evidence_hit = next((term for term in WEAK_EVIDENCE_TERMS if term in lower_text), None)
+    n_match = re.search(r'\bn\s*=\s*(\d{1,3})\b', lower_text)
+    small_n_value = None
+    if n_match:
+        try:
+            n_value = int(n_match.group(1))
+            if n_value < 30:
+                small_n_value = n_value
+        except ValueError:
+            small_n_value = None
+
+    if weak_evidence_hit or small_n_value is not None:
+        if small_n_value is not None and weak_evidence_hit:
+            why = f'The text references weak or limited evidence framing ("{weak_evidence_hit}") and a small sample size (n={small_n_value}), which may not support strong promotional claims without substantial qualification.'
+            snippet_term = f"n={small_n_value}"
+        elif small_n_value is not None:
+            why = f'The text includes a small sample size (n={small_n_value}), which may represent statistically underpowered evidence for promotional use without substantial qualification.'
+            snippet_term = f"n={small_n_value}"
+        else:
+            why = f'The text references weak or limited evidence framing ("{weak_evidence_hit}"), which may not support strong promotional claims without substantial qualification.'
+            snippet_term = weak_evidence_hit
+
+        findings.append({
+            "title": "Statistically underpowered or weak evidence framing",
+            "risk_level": "Medium",
+            "why_flagged": why,
+            "matched_text": find_snippet(text, snippet_term),
+            "rule_reference": "FDA 21 CFR Part 202 / EU Directive 2001/83/EC Articles 87 and 89",
+            "review_note": "Human review required."
+        })
+
+    safety_signal_hit = next((term for term in SAFETY_SIGNAL_TERMS if term in lower_text), None)
+    benefit_or_promo_present = (
+        any(term in lower_text for term in SUPERLATIVE_TERMS)
+        or any(term in lower_text for term in ["improved", "response", "orr", "dcr", "survival", "better", "superior"])
+    )
+
+    if safety_signal_hit and benefit_or_promo_present:
+        findings.append({
+            "title": "Safety language may be present but fair balance may be insufficient",
+            "risk_level": "Medium",
+            "why_flagged": f'The text contains some safety-related language (for example "{safety_signal_hit}") but may still underemphasize safety relative to efficacy or promotional claims.',
+            "matched_text": find_snippet(text, safety_signal_hit),
+            "rule_reference": "FDA 21 CFR Part 202 / EU Directive 2001/83/EC Articles 87 and 89",
+            "review_note": "Human review required."
+        })
+    elif not safety_signal_hit:
         findings.append({
             "title": "Missing cautionary language trigger",
             "risk_level": "Medium",
-            "why_flagged": "No visible warning or precaution language was detected in the submitted text.",
+            "why_flagged": "No visible safety, warning, precaution, or adverse-event language was detected in the submitted text.",
             "matched_text": text[:220].strip(),
             "rule_reference": "FDA 21 CFR Part 202 / EU Directive 2001/83/EC Articles 87 and 89",
             "review_note": "Human review required."
@@ -209,6 +414,97 @@ Do not add findings beyond what is listed above.
     return "\n".join(parts).strip() or "AI summary returned no text."
 
 
+
+def build_transparency_report_text(approved_indication: str = "") -> str:
+    approved_indication = (approved_indication or "").strip() or "Not provided"
+
+    lines = [
+        "TRANSPARENCY & OVERSIGHT REPORT",
+        "",
+        "1. SYSTEM IDENTITY",
+        "- System: MLR-PreCheck",
+        "- Deterministic layer: source of truth for findings in the public demo",
+        "- AI layer: optional assistive summary only; it does not replace deterministic findings",
+        "",
+        "2. APPROVED INDICATION / LABELED SETTING",
+        f"- User-provided approved indication: {approved_indication}",
+        "",
+        "3. HOW THE SYSTEM WORKS",
+        "- The deterministic engine checks promotional text against a fixed ruleset.",
+        "- The AI layer summarizes deterministic findings in plain language.",
+        "- Human review remains required.",
+        "",
+        "4. HUMAN OVERSIGHT",
+        "- This tool is assistive only.",
+        "- It does not determine compliance.",
+        "- It does not provide legal, regulatory, or MLR approval.",
+        "- A qualified human reviewer must review all output before use.",
+        "",
+        "5. DATA HANDLING",
+        "- Public demo inputs are processed to generate the current output.",
+        "- Do not submit patient, personal, or confidential commercial data.",
+        "- This report is a transparency artifact, not a declaration of conformity.",
+        "",
+        "6. PUBLIC DEMO LIMITS",
+        "- Paste plain text only",
+        "- English only",
+        "- Deterministic review up to 12,000 characters",
+        "- AI summary limited to smaller public-demo inputs",
+        "- No PDF or DOCX support in the public demo",
+        "",
+        "7. ACCOUNTABILITY",
+        "- Final accountability remains with the deploying organization and human reviewer.",
+        "",
+        "8. SUPPORT",
+        "- Having issues? drop us an email: hello@lippershey.co",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def build_transparency_report_pdf(approved_indication: str = "") -> bytes:
+    report_text = build_transparency_report_text(approved_indication)
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    left = 18 * mm
+    top = height - 18 * mm
+    line_height = 6 * mm
+    y = top
+
+    c.setTitle("MLR-PreCheck Transparency & Oversight Report")
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(left, y, "MLR-PreCheck Transparency & Oversight Report")
+    y -= 10 * mm
+
+    c.setFont("Helvetica", 10)
+
+    for raw_line in report_text.splitlines():
+        line = raw_line if raw_line.strip() else " "
+        wrapped = []
+        max_chars = 95
+
+        while len(line) > max_chars:
+            split_at = line.rfind(" ", 0, max_chars)
+            if split_at == -1:
+                split_at = max_chars
+            wrapped.append(line[:split_at].rstrip())
+            line = line[split_at:].lstrip()
+        wrapped.append(line)
+
+        for part in wrapped:
+            if y < 18 * mm:
+                c.showPage()
+                c.setFont("Helvetica", 10)
+                y = top
+            c.drawString(left, y, part)
+            y -= line_height
+
+    c.save()
+    buffer.seek(0)
+    return buffer.read()
+
 def render_risk_badge(risk_level: str):
     if risk_level == "High":
         st.error(f"Risk level: {risk_level}")
@@ -233,6 +529,8 @@ st.set_page_config(page_title="MLR-PreCheck", layout="wide")
 
 defaults = {
     "mlr_text": "",
+    "mlr_approved_indication": "",
+    "mlr_last_approved_indication": "",
     "mlr_precheck_done": False,
     "mlr_last_text": "",
     "mlr_last_findings": [],
@@ -292,6 +590,7 @@ top_col1, top_col2, top_col3 = st.columns([1, 1, 3])
 with top_col1:
     if st.button("Load sample text"):
         st.session_state.mlr_text = SAMPLE_PROMO_TEXT
+        st.session_state.mlr_approved_indication = SAMPLE_APPROVED_INDICATION
         st.session_state.mlr_precheck_done = False
         st.session_state.mlr_ai_summary = ""
         st.rerun()
@@ -299,6 +598,8 @@ with top_col1:
 with top_col2:
     if st.button("Reset"):
         st.session_state.mlr_text = ""
+        st.session_state.mlr_approved_indication = ""
+        st.session_state.mlr_last_approved_indication = ""
         st.session_state.mlr_precheck_done = False
         st.session_state.mlr_last_text = ""
         st.session_state.mlr_last_findings = []
@@ -308,6 +609,12 @@ with top_col2:
 
 with top_col3:
     st.caption("Use the sample promotional text for a quick demo, or reset the form.")
+
+approved_indication = st.text_input(
+    "Approved indication / labeled setting",
+    placeholder="Example: Metastatic ALK+ NSCLC",
+    key="mlr_approved_indication"
+)
 
 promo_text = st.text_area(
     "Promotional text",
@@ -324,9 +631,10 @@ if st.button("Run pre-check"):
         st.error("Public demo limit reached: this text exceeds 12,000 characters. For larger promotional assets or supported review workflows, contact us for pricing.")
         st.session_state.mlr_precheck_done = False
     else:
-        findings = detect_findings(promo_text)
+        findings = detect_findings(promo_text, approved_indication)
         report_text = build_report(promo_text, findings)
         st.session_state.mlr_last_text = promo_text
+        st.session_state.mlr_last_approved_indication = approved_indication
         st.session_state.mlr_last_findings = findings
         st.session_state.mlr_last_report = report_text
         st.session_state.mlr_precheck_done = True
@@ -340,6 +648,7 @@ if not st.session_state.mlr_precheck_done and not promo_text.strip():
 
 if st.session_state.mlr_precheck_done:
     last_text = st.session_state.mlr_last_text
+    last_approved_indication = st.session_state.mlr_last_approved_indication
     findings = st.session_state.mlr_last_findings
     report_text = st.session_state.mlr_last_report
 
@@ -352,6 +661,17 @@ if st.session_state.mlr_precheck_done:
         data=report_text,
         file_name="mlr_precheck_report.txt",
         mime="text/plain"
+    )
+
+    transparency_pdf = build_transparency_report_pdf(
+        st.session_state.get("mlr_last_approved_indication", "")
+    )
+
+    st.download_button(
+        label="Download Transparency & Oversight Report (PDF)",
+        data=transparency_pdf,
+        file_name="mlr_precheck_transparency_report.pdf",
+        mime="application/pdf"
     )
 
     st.subheader("Findings")
