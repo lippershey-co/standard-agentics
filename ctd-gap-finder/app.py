@@ -1,5 +1,13 @@
+import os
 import re
+import html
+from io import BytesIO
+from datetime import datetime
 import streamlit as st
+import anthropic
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
 
 SAMPLE_TEXT = """Program: VX-247 Oncology Asset
 
@@ -225,6 +233,323 @@ def build_report(text: str, findings: list[dict]) -> str:
     report.append("")
     return "\n".join(report)
 
+def generate_ai_summary_placeholder(findings: list[dict]) -> str:
+    if not findings:
+        return (
+            "No deterministic findings were triggered by the current v1 rule set. "
+            "Once connected, the Claude-based AI summary will turn this result into a short plain-language executive note."
+        )
+
+    lines = []
+    lines.append("Claude-based AI summary preview")
+    lines.append("")
+    lines.append("This placeholder shows where the assistive AI summary will appear.")
+    lines.append("It will summarize deterministic findings only, not replace them.")
+    lines.append("")
+    present = sum(1 for f in findings if f["status"] == "Present")
+    partial = sum(1 for f in findings if f["status"] == "Partial")
+    missing = sum(1 for f in findings if f["status"] == "Missing")
+    lines.append(f"Present: {present}")
+    lines.append(f"Partial: {partial}")
+    lines.append(f"Missing: {missing}")
+    lines.append("Top flagged CTD areas:")
+    for finding in findings[:3]:
+        lines.append(f"- {finding['title']} ({finding['status']})")
+    lines.append("")
+    lines.append("Human review is still required.")
+    return "\n".join(lines)
+
+
+def generate_ai_summary(text: str, findings: list[dict]) -> str:
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return "AI summary is not available because ANTHROPIC_API_KEY is not set on this runtime."
+
+    findings_text = "\n".join(
+        [
+            f"- {f['title']} | Status: {f['status']} | Why: {f['why_flagged']} | Matched: {f['matched_text']} | Reference: {f['reference_area']}"
+            for f in findings
+        ]
+    ) or "- No deterministic findings triggered."
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    system_prompt = (
+        "You are an assistive CTD-readiness summarizer. "
+        "You must summarize only the deterministic findings provided to you, plus limited clearly grounded interpretation that directly follows from those findings. "
+        "Do not invent new findings. "
+        "Do not state PASS or FAIL. "
+        "Do not state the package is submission-ready, adequate, approved, or final unless that was already explicitly established in the deterministic findings. "
+        "Do not make definitive legal, medical, or regulatory judgments. "
+        "Be concise, practical, and plain-English. "
+        "Your output must use exactly these section headings in this exact order: "
+        "'Main review concerns', 'Likely reviewer focus', 'Suggested next step'. "
+        "End with the exact sentence: 'Human review is required.'"
+    )
+
+    user_prompt = f"""
+CTD / submission-readiness text:
+{text}
+
+Deterministic findings:
+{findings_text}
+
+Write the response in this exact structure:
+
+Main review concerns
+<1 short paragraph summarizing the most important deterministic findings and any limited directly grounded interpretation.>
+
+Likely reviewer focus
+<1 short paragraph describing what a reviewer would most likely examine next, based only on the deterministic findings and clearly grounded interpretation.>
+
+Suggested next step
+<1 short paragraph with the most practical next action, based only on the deterministic findings.>
+
+Human review is required.
+
+Rules:
+- Do not add new findings not supported by the deterministic findings.
+- Do not use bullet points.
+- Do not output PASS or FAIL.
+- Do not say the package is submission-ready, adequate, approved, or final.
+- Keep the tone practical and professional.
+"""
+
+    message = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=700,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_prompt}],
+    )
+
+    parts = []
+    for block in message.content:
+        block_text = getattr(block, "text", None)
+        if block_text:
+            parts.append(block_text)
+
+    return "\n".join(parts).strip() or "AI summary returned no text."
+
+
+def parse_structured_ai_summary(summary_text: str) -> dict:
+    if not summary_text:
+        return {}
+
+    pattern = re.compile(
+        r"(Main review concerns|Likely reviewer focus|Suggested next step|Human review is required\.?)",
+        flags=re.IGNORECASE
+    )
+
+    parts = pattern.split(summary_text.strip())
+    sections = {}
+    current_heading = None
+
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+
+        normalized = part.lower().rstrip(".")
+
+        if normalized == "main review concerns":
+            current_heading = "Main review concerns"
+            sections[current_heading] = ""
+        elif normalized == "likely reviewer focus":
+            current_heading = "Likely reviewer focus"
+            sections[current_heading] = ""
+        elif normalized == "suggested next step":
+            current_heading = "Suggested next step"
+            sections[current_heading] = ""
+        elif normalized == "human review is required":
+            current_heading = "Human review is required."
+            sections[current_heading] = ""
+        else:
+            if current_heading:
+                if sections[current_heading]:
+                    sections[current_heading] += " " + part
+                else:
+                    sections[current_heading] = part
+
+    if not sections:
+        sections = {"Main review concerns": summary_text.strip()}
+
+    return sections
+
+
+def render_ai_summary_section(title: str, body: str, accent_color: str):
+    safe_title = html.escape(title)
+    safe_body = html.escape(body).replace("\n", "<br>")
+
+    st.markdown(
+        f"""
+        <div style="
+            border: 1px solid rgba(255,255,255,0.10);
+            border-left: 4px solid {accent_color};
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+            background-color: rgba(255,255,255,0.03);
+        ">
+            <div style="
+                font-size: 1.0rem;
+                font-weight: 700;
+                color: {accent_color};
+                margin-bottom: 8px;
+            ">
+                {safe_title}
+            </div>
+            <div style="
+                font-size: 0.98rem;
+                line-height: 1.65;
+                color: #E5E7EB;
+            ">
+                {safe_body}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_structured_ai_summary(summary_text: str):
+    sections = parse_structured_ai_summary(summary_text)
+
+    color_map = {
+        "Main review concerns": "#60A5FA",
+        "Likely reviewer focus": "#A78BFA",
+        "Suggested next step": "#34D399",
+    }
+
+    for section_name in [
+        "Main review concerns",
+        "Likely reviewer focus",
+        "Suggested next step",
+    ]:
+        body = sections.get(section_name, "").strip()
+        if body:
+            render_ai_summary_section(
+                section_name,
+                body,
+                color_map.get(section_name, "#60A5FA")
+            )
+
+    st.warning("Human review is required.")
+
+
+
+def build_transparency_report_text(text_input: str = "", findings=None) -> str:
+    report_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    findings = findings or []
+
+    present = sum(1 for f in findings if f.get("status") == "Present")
+    partial = sum(1 for f in findings if f.get("status") == "Partial")
+    missing = sum(1 for f in findings if f.get("status") == "Missing")
+
+    lines = [
+        "TRANSPARENCY & OVERSIGHT REPORT",
+        "",
+        f"Generated: {report_date}",
+        "",
+        "1. SYSTEM IDENTITY",
+        "- System: CTD-Gap-Finder",
+        "- Deterministic layer: source of truth for findings in the public demo",
+        "- AI layer: optional assistive summary only; it does not replace deterministic findings",
+        "",
+        "2. INPUT CONTEXT",
+        f"- Package summary length: {len(text_input)} characters",
+        "",
+        "3. HOW THE SYSTEM WORKS",
+        "- The deterministic engine checks package text against a fixed CTD completeness checklist.",
+        "- The AI layer summarizes deterministic findings in plain language.",
+        "- Human review remains required.",
+        "",
+        "4. READINESS LOGIC USED IN THIS DEMO",
+        "- Module 1 administrative documentation",
+        "- Module 2 summary documentation",
+        "- Module 3 CMC content",
+        "- Container closure documentation",
+        "- Stability package",
+        "- Module 4 nonclinical content",
+        "- Module 5 clinical content",
+        "- Submission timing / readiness statement",
+        "",
+        "5. CURRENT READINESS SNAPSHOT",
+        f"- Present: {present}",
+        f"- Partial: {partial}",
+        f"- Missing: {missing}",
+        "",
+        "6. HUMAN OVERSIGHT",
+        "- This tool is assistive only.",
+        "- It does not determine submission adequacy or regulatory acceptability.",
+        "- It does not provide legal, medical, or regulatory approval.",
+        "- A qualified human reviewer must review all output before use.",
+        "",
+        "7. DATA HANDLING",
+        "- Public demo inputs are processed to generate the current output.",
+        "- Do not submit patient, personal, or confidential commercial data.",
+        "- This report is a transparency artifact, not a declaration of conformity.",
+        "",
+        "8. PUBLIC DEMO LIMITS",
+        "- Paste plain text only",
+        "- English only",
+        "- Deterministic review up to 12,000 characters",
+        "- AI summary limited to smaller public-demo inputs",
+        "- No PDF or DOCX support in the public demo",
+        "",
+        "9. ACCOUNTABILITY",
+        "- Final accountability remains with the deploying organization and human reviewer.",
+        "",
+        "10. SUPPORT",
+        "- Having issues? drop us an email: hello@lippershey.co",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def build_transparency_report_pdf(text_input: str = "", findings=None) -> bytes:
+    report_text = build_transparency_report_text(text_input, findings)
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    left = 18 * mm
+    top = height - 18 * mm
+    line_height = 6 * mm
+    y = top
+
+    c.setTitle("CTD-Gap-Finder Transparency & Oversight Report")
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(left, y, "CTD-Gap-Finder Transparency & Oversight Report")
+    y -= 10 * mm
+
+    c.setFont("Helvetica", 10)
+
+    for raw_line in report_text.splitlines():
+        line = raw_line if raw_line.strip() else " "
+        wrapped = []
+        max_chars = 95
+
+        while len(line) > max_chars:
+            split_at = line.rfind(" ", 0, max_chars)
+            if split_at == -1:
+                split_at = max_chars
+            wrapped.append(line[:split_at].rstrip())
+            line = line[split_at:].lstrip()
+        wrapped.append(line)
+
+        for part in wrapped:
+            if y < 18 * mm:
+                c.showPage()
+                c.setFont("Helvetica", 10)
+                y = top
+            c.drawString(left, y, part)
+            y -= line_height
+
+    c.save()
+    buffer.seek(0)
+    return buffer.read()
+
+
 def render_status_badge(status: str):
     if status == "Present":
         st.success(f"Status: {status}")
@@ -340,6 +665,22 @@ with st.expander("Public demo policy", expanded=False):
 - Human review required
     """)
 
+
+with st.expander("Transparency & oversight", expanded=False):
+    st.markdown("""
+This app can generate a **Transparency & Oversight Report** describing:
+
+- the system identity
+- deterministic vs AI summary roles
+- human oversight expectations
+- public-demo limits
+- data-handling cautions
+- support contact
+
+This is a transparency artifact for stakeholders.  
+It is **not** a declaration of conformity and **not** a legal approval.
+    """)
+
 top_col1, top_col2, top_col3 = st.columns([1, 1, 3])
 
 with top_col1:
@@ -412,6 +753,15 @@ if st.session_state.ctd_done:
         mime="text/plain"
     )
 
+    transparency_pdf = build_transparency_report_pdf(last_text, findings)
+
+    st.download_button(
+        label="Download Transparency & Oversight Report (PDF)",
+        data=transparency_pdf,
+        file_name="ctd_gap_finder_transparency_report.pdf",
+        mime="application/pdf"
+    )
+
     st.subheader("Findings")
     if findings:
         for finding in findings:
@@ -423,7 +773,18 @@ if st.session_state.ctd_done:
     st.subheader("AI summary")
     allowed, ai_message = ai_summary_allowed(last_text)
     if allowed:
-        st.caption("AI summary is available for this input under current public-demo limits.")
+        if st.button("Generate AI summary"):
+            with st.spinner("Generating AI summary..."):
+                try:
+                    st.session_state.ctd_ai_summary = generate_ai_summary(last_text, findings)
+                    st.rerun()
+                except Exception as e:
+                    st.warning(f"AI summary is temporarily unavailable. Deterministic review remains available. Details: {e}")
+        else:
+            st.caption("AI summary is available for this input under current public-demo limits.")
+
+        if st.session_state.ctd_ai_summary:
+            render_structured_ai_summary(st.session_state.ctd_ai_summary)
     else:
         st.warning(ai_message)
 
