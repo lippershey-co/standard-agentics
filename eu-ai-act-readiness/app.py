@@ -73,8 +73,36 @@ def find_snippet(text: str, keyword: str, max_len: int = 220) -> str:
     return snippet
 
 
+def detect_human_oversight_contradiction(text: str):
+    lower_text = text.lower()
+
+    contradiction_terms = [
+        "no human-in-the-loop",
+        "no human in the loop",
+        "no human review required",
+        "fully automated",
+        "bypassing initial manager nominations",
+        "bypass initial manager nominations",
+        "mathematically objective",
+        "no human oversight",
+        "without human review",
+    ]
+
+    matched = next((term for term in contradiction_terms if term in lower_text), None)
+    return matched
+
+
 def classify_area(text: str, area: str) -> dict:
     lower_text = text.lower()
+
+    if area == "Human oversight":
+        contradiction = detect_human_oversight_contradiction(text)
+        if contradiction:
+            return {
+                "status": "Missing",
+                "why_flagged": f'The submitted text includes language that appears to deny or bypass meaningful human oversight ("{contradiction}"), which may indicate a mandatory oversight gap.',
+                "matched_text": find_snippet(text, contradiction),
+            }
 
     for keyword in STRONG_SIGNALS[area]:
         if keyword in lower_text:
@@ -181,6 +209,18 @@ def detect_readiness(use_case_text: str) -> list[dict]:
             "matched_text": find_snippet(use_case_text, matched_emotion),
             "reference_area": "EU AI Act — potential prohibited-practice escalation",
             "recommended_next_action": "Escalate for immediate legal and compliance review. Do not rely on this public demo as a final legal determination.",
+            "review_note": "Human review required."
+        })
+
+    oversight_contradiction = detect_human_oversight_contradiction(use_case_text)
+    if oversight_contradiction:
+        findings.append({
+            "title": "Potential mandatory oversight gap detected",
+            "status": "Missing",
+            "why_flagged": f'The submitted use case appears to deny or bypass meaningful human oversight ("{oversight_contradiction}"), which may create a significant oversight gap.',
+            "matched_text": find_snippet(use_case_text, oversight_contradiction),
+            "reference_area": "EU AI Act — Human oversight",
+            "recommended_next_action": "Add explicit human oversight controls, review checkpoints, and accountable human decision authority before relying on the system in practice.",
             "review_note": "Human review required."
         })
 
