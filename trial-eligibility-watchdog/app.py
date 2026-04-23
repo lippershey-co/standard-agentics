@@ -33,6 +33,24 @@ def normalize_line(line: str) -> str:
     return line
 
 
+def looks_like_trial_scope(text: str) -> bool:
+    lower_text = text.lower()
+    scope_terms = [
+        "inclusion criteria", "exclusion criteria", "ecog", "metastatic",
+        "brain metastases", "eligibility", "trial", "study", "recist",
+        "measurable lesion", "performance status", "cardiovascular"
+    ]
+    return any(term in lower_text for term in scope_terms)
+
+
+def ai_summary_allowed(text: str) -> tuple[bool, str]:
+    if len(text) > 3500:
+        return False, "Deterministic review completed. AI summary is limited to 3,500 characters in the public demo. For larger inputs and extended review support, contact us for pricing."
+    if not looks_like_trial_scope(text):
+        return False, "This public demo AI summary is limited to trial eligibility or screening text. For broader document review or custom workflows, contact us for pricing."
+    return True, ""
+
+
 def detect_watchdog_findings(trial_id: str, eligibility_text: str) -> list[dict]:
     findings = []
     lines = split_lines(eligibility_text)
@@ -125,6 +143,30 @@ def build_report(trial_id: str, eligibility_text: str, findings: list[dict]) -> 
     report.append("- No final feasibility or regulatory determination")
     report.append("")
     return "\n".join(report)
+
+
+def generate_ai_summary_placeholder(trial_id: str, findings: list[dict]) -> str:
+    if not findings:
+        return (
+            "No deterministic findings were triggered by the current v1 rule set. "
+            "Once connected, the Claude-based AI summary will turn this result into a short plain-language reviewer note."
+        )
+
+    lines = []
+    lines.append("Claude-based AI summary preview")
+    lines.append("")
+    lines.append("This placeholder shows where the assistive AI summary will appear.")
+    lines.append("It will summarize deterministic findings only, not replace them.")
+    lines.append("")
+    if trial_id.strip():
+        lines.append(f"Trial identifier: {trial_id.strip()}")
+    lines.append(f"Number of deterministic findings: {len(findings)}")
+    lines.append("Top flagged issues:")
+    for finding in findings[:3]:
+        lines.append(f"- {finding['title']} ({finding['risk_level']})")
+    lines.append("")
+    lines.append("Human review is still required.")
+    return "\n".join(lines)
 
 
 def render_risk_badge(risk_level: str):
@@ -296,11 +338,15 @@ if st.session_state.tew_done:
     else:
         st.success("No findings were triggered by the current v1 rule set.")
 
-    st.subheader("AI summary (public demo preview)")
-    if len(last_text) > 3500:
-        st.warning("Deterministic review completed. AI summary is limited to 3,500 characters in the public demo. For larger inputs and extended review support, contact us for pricing.")
+    st.subheader("AI summary")
+    allowed, ai_message = ai_summary_allowed(last_text)
+    if allowed:
+        if st.button("Generate AI summary"):
+            st.info(generate_ai_summary_placeholder(last_trial_id, findings))
+        else:
+            st.caption("AI summary is available for this input under current public-demo limits.")
     else:
-        st.info("Claude-based AI summary will appear here once connected. It will summarize the deterministic findings only and will remain subject to public-demo limits.")
+        st.warning(ai_message)
 
     with st.expander("Preview pasted eligibility text"):
         st.write(last_text[:1200])
