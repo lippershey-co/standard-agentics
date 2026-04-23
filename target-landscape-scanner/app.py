@@ -148,7 +148,7 @@ def render_risk_badge(risk_level: str):
     elif risk_level == "Low":
         st.info(f"Risk level: {risk_level}")
     else:
-        st.caption(f"Risk level: {risk_level}")
+        st.info(f"Risk level: {risk_level}")
 
 def render_private_pilot_locked_section(title: str, description: str):
     st.markdown(
