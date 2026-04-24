@@ -103,6 +103,35 @@ def detect_tumor_type(text: str) -> str:
             return label
     return "Not clearly stated"
 
+def looks_like_biomarker_scope(text: str) -> bool:
+    lower_text = text.lower()
+    scope_terms = [
+        "egfr",
+        "alk",
+        "ret",
+        "kras",
+        "ntrk",
+        "her2",
+        "pd-l1",
+        "molecular summary",
+        "biomarker",
+        "fusion",
+        "mutation",
+        "pathology",
+        "tumor positive",
+        "not detected",
+    ]
+    return any(term in lower_text for term in scope_terms)
+
+
+def ai_summary_allowed(text: str):
+    if len(text) > 3500:
+        return False, "Deterministic review completed. AI summary is limited to 3,500 characters in the public demo. For larger inputs and extended review support, contact us for pricing."
+    if not looks_like_biomarker_scope(text):
+        return False, "This public demo AI summary is limited to biomarker, molecular, or pathology-style text. For broader document review or custom workflows, contact us for pricing."
+    return True, ""
+
+
 def detect_biomarker_matches(text: str):
     findings = []
     table_rows = []
@@ -390,7 +419,11 @@ if st.session_state.bm_done:
         st.info("No biomarker rows available from the current v1 rule set.")
 
     st.subheader("AI summary")
-    st.caption("AI summary will be added in the next step.")
+    allowed, ai_message = ai_summary_allowed(last_text)
+    if allowed:
+        st.caption("AI summary is available for this input under current public-demo limits.")
+    else:
+        st.warning(ai_message)
 
     st.divider()
     st.subheader("Result Quality Review")
