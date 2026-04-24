@@ -66,6 +66,33 @@ def extract_context(text: str) -> str:
     m = re.search(r"Role / context:\s*(.+)", text, flags=re.IGNORECASE)
     return m.group(1).strip() if m else "Not clearly stated"
 
+def looks_like_kol_scope(text: str) -> bool:
+    lower_text = text.lower()
+    scope_terms = [
+        "kol",
+        "speaker",
+        "disclosed relationships",
+        "consulting fees",
+        "advisory board",
+        "disclosure slide",
+        "oncology advisory event",
+        "comparative positioning",
+        "speaker deck",
+        "conflict",
+        "novathera",
+        "helix bio",
+    ]
+    return any(term in lower_text for term in scope_terms)
+
+
+def ai_summary_allowed(text: str):
+    if len(text) > 3500:
+        return False, "Deterministic review completed. AI summary is limited to 3,500 characters in the public demo. For larger inputs and extended review support, contact us for pricing."
+    if not looks_like_kol_scope(text):
+        return False, "This public demo AI summary is limited to KOL, speaker, disclosure, or conflict-review text. For broader document review or custom workflows, contact us for pricing."
+    return True, ""
+
+
 def detect_kol_findings(text: str):
     findings = []
     table_rows = []
@@ -345,7 +372,11 @@ if st.session_state.kol_done:
         st.info("No conflict rows available from the current v1 rule set.")
 
     st.subheader("AI summary")
-    st.caption("AI summary will be added in the next step.")
+    allowed, ai_message = ai_summary_allowed(last_text)
+    if allowed:
+        st.caption("AI summary is available for this input under current public-demo limits.")
+    else:
+        st.warning(ai_message)
 
     st.divider()
     st.subheader("Result Quality Review")
