@@ -542,6 +542,44 @@ def build_transparency_report_pdf(text_input: str = "", findings=None) -> bytes:
     return buffer.read()
 
 
+
+
+
+def render_ai_data_notice():
+    st.warning("Data notice — public demo only")
+
+    st.write(
+        "Use this AI summary only with **example, synthetic, public, or fully anonymised text**."
+    )
+
+    st.markdown(
+        """**Do not submit:**
+- Real patient data or case narratives
+- Unpublished compound or trial data
+- Confidential regulatory documents
+- Anything covered by an NDA or confidentiality agreement
+"""
+    )
+
+    st.markdown(
+        """**Safe to use:**
+- Publicly available label text
+- Anonymised or synthetic examples
+- Your own non-confidential draft promotional copy
+- Published regulatory guidance excerpts
+"""
+    )
+
+    st.write(
+        "The selected text will be sent to the **Anthropic API** for summarisation. "
+        "Under Anthropic's commercial API terms, inputs are **not used for model training** "
+        "and are retained for up to **7 days** by default."
+    )
+
+    st.info(
+        "Want a private deployment or EU-residency setup? Contact hello@lippershey.co."
+    )
+
 def render_status_badge(status: str):
     if status == "Present":
         st.success(f"Status: {status}")
@@ -608,6 +646,7 @@ defaults = {
     "ind_last_findings": [],
     "ind_last_report": "",
     "ind_ai_summary": "",
+    "ind_ai_notice_open": False,
     "ind_quality_review_open": False,
 }
 for k, v in defaults.items():
@@ -766,14 +805,28 @@ if st.session_state.ind_done:
     allowed, ai_message = ai_summary_allowed(last_text)
     if allowed:
         if st.button("Generate AI summary"):
-            with st.spinner("Generating AI summary..."):
-                try:
-                    st.session_state.ind_ai_summary = generate_ai_summary(last_text, findings)
-                    st.rerun()
-                except Exception as e:
-                    st.warning(f"AI summary is temporarily unavailable. Deterministic review remains available. Details: {e}")
+            st.session_state.ind_ai_notice_open = True
+            st.rerun()
         else:
             st.caption("AI summary is available for this input under current public-demo limits.")
+
+        if st.session_state.get("ind_ai_notice_open"):
+            render_ai_data_notice()
+            col_ai_1, col_ai_2 = st.columns(2)
+            with col_ai_1:
+                if st.button("No, I don't want to use AI", key="ind_ai_notice_open_cancel"):
+                    st.session_state.ind_ai_notice_open = False
+                    st.rerun()
+            with col_ai_2:
+                if st.button("Yes, I understand and confirm the submitted text is example, synthetic, public, or fully anonymised.", key="ind_ai_notice_open_confirm"):
+                    with st.spinner("Generating AI summary..."):
+                        try:
+                            st.session_state.ind_ai_summary = generate_ai_summary(last_text, findings)
+                            st.session_state.ind_ai_notice_open = False
+                            st.rerun()
+                        except Exception as e:
+                            st.session_state.ind_ai_notice_open = False
+                            st.warning(f"AI summary is temporarily unavailable. Deterministic review remains available. Details: {e}")
 
         if st.session_state.ind_ai_summary:
             render_structured_ai_summary(st.session_state.ind_ai_summary)
