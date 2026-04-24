@@ -92,6 +92,34 @@ def extract_line(text: str, keyword: str, max_len: int = 220) -> str:
         snippet = snippet[:max_len].rsplit(" ", 1)[0] + "..."
     return snippet
 
+def looks_like_protocol_amendment_scope(old_text: str, new_text: str) -> bool:
+    lower_text = (old_text + "\n" + new_text).lower()
+    scope_terms = [
+        "protocol",
+        "eligibility",
+        "safety reporting",
+        "sae",
+        "assessments",
+        "endpoint",
+        "ecog",
+        "brain metastases",
+        "tumor imaging",
+        "progression-free survival",
+        "objective response rate",
+        "systemic therapy",
+    ]
+    return any(term in lower_text for term in scope_terms)
+
+
+def ai_summary_allowed(old_text: str, new_text: str):
+    combined_length = len(old_text) + len(new_text)
+    if combined_length > 3500:
+        return False, "Deterministic review completed. AI summary is limited to 3,500 combined characters in the public demo. For larger inputs and extended review support, contact us for pricing."
+    if not looks_like_protocol_amendment_scope(old_text, new_text):
+        return False, "This public demo AI summary is limited to protocol-amendment or clinical study amendment text. For broader document review or custom workflows, contact us for pricing."
+    return True, ""
+
+
 def detect_amendment_findings(old_text: str, new_text: str):
     findings = []
     table_rows = []
@@ -387,7 +415,11 @@ if st.session_state.pai_done:
         st.info("No amendment-impact rows available from the current v1 rule set.")
 
     st.subheader("AI summary")
-    st.caption("AI summary will be added in the next step.")
+    allowed, ai_message = ai_summary_allowed(last_old_text, last_new_text)
+    if allowed:
+        st.caption("AI summary is available for this input under current public-demo limits.")
+    else:
+        st.warning(ai_message)
 
     st.divider()
     st.subheader("Result Quality Review")
