@@ -567,7 +567,7 @@ def build_transparency_report_pdf(text_input: str = "", findings=None, table_row
     left = 18 * mm
     top = height - 18 * mm
     bottom = 18 * mm
-    line_height = 5.2 * mm
+    line_height = 4.7 * mm
     page_no = 1
     y = top
 
@@ -594,7 +594,7 @@ def build_transparency_report_pdf(text_input: str = "", findings=None, table_row
     def start_page(page_number: int):
         nonlocal y
         draw_header(page_number)
-        y = top - 8 * mm
+        y = top - 6 * mm
 
     def next_page():
         nonlocal page_no
@@ -611,20 +611,20 @@ def build_transparency_report_pdf(text_input: str = "", findings=None, table_row
         nonlocal y
         c.setFont("Helvetica-Bold", 16)
         c.drawString(left, y, "Transparency & Oversight Report")
-        y -= 8 * mm
+        y -= 6 * mm
         c.setFont("Helvetica-Bold", 11)
         c.drawString(left, y, "Biomarker-Match · Standard Agentics · Public Demo")
-        y -= 7 * mm
+        y -= 5.5 * mm
         c.setFont("Helvetica", 10)
         c.drawString(left, y, f"Generated: {report['generated']}")
-        y -= 8 * mm
+        y -= 6 * mm
 
     def draw_section(title: str, items):
         nonlocal y
         ensure_space(3)
         c.setFont("Helvetica-Bold", 11)
         c.drawString(left, y, title)
-        y -= 6 * mm
+        y -= 5 * mm
 
         for item in items:
             if isinstance(item, tuple):
@@ -651,7 +651,7 @@ def build_transparency_report_pdf(text_input: str = "", findings=None, table_row
                     ensure_space(1)
                     c.drawString(left + 5 * mm, y, cont)
                     y -= line_height
-        y -= 2 * mm
+        y -= 1 * mm
 
     def draw_upgrade_page():
         nonlocal page_no, y
