@@ -627,6 +627,12 @@ This deterministic layer is the **source of truth** for findings shown in the pu
 An optional Claude-based AI summary layer can later rewrite deterministic findings into a more readable reviewer note.
 This AI layer is **assistive only**. It does not replace deterministic findings or human review.
 
+
+### Demo rules depth
+This public demo uses a **limited deterministic rules pack** with **restricted edge-case coverage**.
+
+To unlock **Private Pilot** with the **full deep rules pack**, **expanded edge-case coverage**, and **rules updates**, contact [hello@lippershey.co](mailto:hello@lippershey.co) or see more details [here](https://standardagentics.ai/pricing).
+
 ### Public demo limits
 - Paste plain text only
 - KOL / speaker / disclosure review text only
