@@ -476,7 +476,9 @@ def render_structured_ai_summary(summary_text: str):
 
 
 
-def build_transparency_report_text(text_input: str = "", findings=None, table_rows=None) -> str:
+
+
+def build_transparency_report_text(text_input: str = "", findings=None, table_rows=None, ai_summary_text: str = "") -> dict:
     report_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     findings = findings or []
     table_rows = table_rows or []
@@ -485,109 +487,250 @@ def build_transparency_report_text(text_input: str = "", findings=None, table_ro
     low_count = sum(1 for f in findings if f.get("risk_level") == "Low")
     medium_count = sum(1 for f in findings if f.get("risk_level") == "Medium")
     high_count = sum(1 for f in findings if f.get("risk_level") == "High")
+    total_count = len(findings)
 
-    lines = [
-        "TRANSPARENCY & OVERSIGHT REPORT",
-        "",
-        f"Generated: {report_date}",
-        "",
-        "1. SYSTEM IDENTITY",
-        "- System: Biomarker-Match",
-        "- Deterministic layer: source of truth for findings in the public demo",
-        "- AI layer: optional assistive summary only; it does not replace deterministic findings",
-        "",
-        "2. INPUT CONTEXT",
-        f"- Input length: {len(text_input)} characters",
-        f"- Biomarker rows detected: {len(table_rows)}",
-        "",
-        "3. HOW THE SYSTEM WORKS",
-        "- The deterministic engine checks biomarker or pathology-style text against a fixed set of actionable-marker heuristics.",
-        "- The AI layer summarizes deterministic findings and biomarker-table outputs in plain language.",
-        "- Human review remains required.",
-        "",
-        "4. MATCHING LOGIC USED IN THIS DEMO",
-        "- Biomarker pattern detection",
-        "- Negative / not-detected context handling",
-        "- Tumor-type extraction from local context",
-        "- Biomarker match table generation",
-        "",
-        "5. CURRENT SNAPSHOT",
-        f"- High-risk findings: {high_count}",
-        f"- Medium-risk findings: {medium_count}",
-        f"- Low-risk findings: {low_count}",
-        f"- Info findings: {info_count}",
-        "",
-        "6. HUMAN OVERSIGHT",
-        "- This tool is assistive only.",
-        "- It does not determine medical eligibility, treatment selection, or final clinical action.",
-        "- It does not provide legal, medical, or regulatory approval.",
-        "- A qualified human reviewer must review all output before use.",
-        "",
-        "7. DATA HANDLING",
-        "- Public demo inputs are processed to generate the current output.",
-        "- Do not submit patient, personal, or confidential commercial data.",
-        "- This report is a transparency artifact, not a declaration of conformity.",
-        "",
-        "8. PUBLIC DEMO LIMITS",
-        "- Paste plain text only",
-        "- English only",
-        "- Deterministic review up to 12,000 characters",
-        "- AI summary limited to smaller public-demo inputs",
-        "- No PDF or DOCX support in the public demo",
-        "",
-        "9. ACCOUNTABILITY",
-        "- Final accountability remains with the deploying organization and human reviewer.",
-        "",
-        "10. SUPPORT",
-        "- Having issues? drop us an email: hello@lippershey.co",
-        "",
-    ]
-    return "\n".join(lines)
+    ai_used = "Yes" if ai_summary_text.strip() else "No"
+    ai_available = "Yes — triggered in this run" if ai_summary_text.strip() else "Yes — not triggered in this run"
+    run_mode = "Summary generated through Anthropic API" if ai_summary_text.strip() else "Deterministic-only output"
+
+    sections = []
+
+    sections.append(("1. SYSTEM IDENTITY", [
+        ("System", "Biomarker-Match"),
+        ("Deterministic layer", "Source of truth for all findings. Results are rule-based, not probabilistic."),
+        ("AI summary layer", "Optional assistive layer — does not replace deterministic findings."),
+        ("Operated by", "Lippershey · standardagentics.ai"),
+    ]))
+
+    sections.append(("2. RUN STATUS", [
+        ("AI summary used", ai_used),
+        ("AI available", ai_available),
+        ("Run mode", run_mode),
+        ("Run timestamp", report_date),
+    ]))
+
+    sections.append(("3. INPUT AND DATA SOURCES", [
+        ("Input length", f"{len(text_input)} characters"),
+        ("Input source", "User-pasted text"),
+        ("External sources", "None queried in this run"),
+        ("Biomarker rows detected", str(len(table_rows))),
+    ]))
+
+    sections.append(("4. CURRENT SNAPSHOT — FINDINGS", [
+        ("High-risk findings", str(high_count)),
+        ("Medium-risk findings", str(medium_count)),
+        ("Low-risk findings", str(low_count)),
+        ("Info findings", str(info_count)),
+        ("Total findings", str(total_count)),
+    ]))
+
+    sections.append(("5. HUMAN OVERSIGHT", [
+        "This tool is assistive only. It does not replace qualified human review.",
+        "It does not determine medical eligibility, treatment selection, or final clinical action.",
+        "It does not provide legal, medical, or regulatory approval of any kind.",
+        "A qualified human reviewer must review all outputs before any use or decision.",
+    ]))
+
+    sections.append(("6. DATA HANDLING", [
+        ("Processing scope", "Inputs processed in-session only. No data stored or shared."),
+        ("Data restriction", "Do not submit patient data, personal data (GDPR Art. 4), unpublished compound data, or NDA-covered content."),
+        ("AI transmission", "If AI summary is triggered, text is sent to the Anthropic API — 7-day retention, never used for model training."),
+    ]))
+
+    sections.append(("7. PUBLIC DEMO LIMITS", [
+        "Plain text only — no PDF or DOCX upload in the public demo",
+        "English language inputs only",
+        "Deterministic review up to 12,000 characters",
+        "Rules pack is a limited starter pack — restricted edge-case and synonym coverage",
+        "No live guideline query, trial lookup, or external database access",
+    ]))
+
+    sections.append(("8. SUPPORT", [
+        ("Email", "hello@lippershey.co"),
+        ("Website", "standardagentics.ai"),
+        ("Report schema version", "Public Demo v1.1"),
+    ]))
+
+    return {
+        "generated": report_date,
+        "sections": sections,
+    }
 
 
-def build_transparency_report_pdf(text_input: str = "", findings=None, table_rows=None) -> bytes:
-    report_text = build_transparency_report_text(text_input, findings, table_rows)
+def build_transparency_report_pdf(text_input: str = "", findings=None, table_rows=None, ai_summary_text: str = "") -> bytes:
+    report = build_transparency_report_text(text_input, findings, table_rows, ai_summary_text)
+
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
 
     left = 18 * mm
     top = height - 18 * mm
-    line_height = 6 * mm
+    bottom = 18 * mm
+    line_height = 5.2 * mm
+    page_no = 1
     y = top
 
-    c.setTitle("Biomarker-Match Transparency & Oversight Report")
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(left, y, "Biomarker-Match Transparency & Oversight Report")
-    y -= 10 * mm
-
-    c.setFont("Helvetica", 10)
-
-    for raw_line in report_text.splitlines():
-        line = raw_line if raw_line.strip() else " "
-        wrapped = []
-        max_chars = 95
-
-        while len(line) > max_chars:
-            split_at = line.rfind(" ", 0, max_chars)
+    def wrap_text(value: str, max_chars: int = 100):
+        value = str(value).strip()
+        if not value:
+            return [""]
+        lines = []
+        while len(value) > max_chars:
+            split_at = value.rfind(" ", 0, max_chars)
             if split_at == -1:
                 split_at = max_chars
-            wrapped.append(line[:split_at].rstrip())
-            line = line[split_at:].lstrip()
-        wrapped.append(line)
+            lines.append(value[:split_at].rstrip())
+            value = value[split_at:].lstrip()
+        lines.append(value)
+        return lines
 
-        for part in wrapped:
-            if y < 18 * mm:
-                c.showPage()
-                c.setFont("Helvetica", 10)
-                y = top
-            c.drawString(left, y, part)
+    def draw_header(page_number: int):
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(left, height - 10 * mm, f"STANDARD AGENTICS Biomarker-Match · Transparency & Oversight Report · Public Demo Page {page_number}")
+        c.setFont("Helvetica", 8)
+        c.drawString(left, height - 15 * mm, "This is a transparency artifact, not a declaration of conformity. Human review is required before any use of outputs.")
+
+    def start_page(page_number: int):
+        nonlocal y
+        draw_header(page_number)
+        y = top - 8 * mm
+
+    def next_page():
+        nonlocal page_no
+        c.showPage()
+        page_no += 1
+        start_page(page_no)
+
+    def ensure_space(lines_needed: int):
+        nonlocal y
+        if y - (lines_needed * line_height) < bottom:
+            next_page()
+
+    def draw_title():
+        nonlocal y
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(left, y, "Transparency & Oversight Report")
+        y -= 8 * mm
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(left, y, "Biomarker-Match · Standard Agentics · Public Demo")
+        y -= 7 * mm
+        c.setFont("Helvetica", 10)
+        c.drawString(left, y, f"Generated: {report['generated']}")
+        y -= 8 * mm
+
+    def draw_section(title: str, items):
+        nonlocal y
+        ensure_space(3)
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(left, y, title)
+        y -= 6 * mm
+
+        for item in items:
+            if isinstance(item, tuple):
+                label, value = item
+                wrapped = wrap_text(value, 78)
+                ensure_space(len(wrapped) + 1)
+                c.setFont("Helvetica-Bold", 9)
+                c.drawString(left, y, str(label))
+                c.setFont("Helvetica", 9)
+                x2 = left + 42 * mm
+                c.drawString(x2, y, wrapped[0])
+                y -= line_height
+                for cont in wrapped[1:]:
+                    ensure_space(1)
+                    c.drawString(x2, y, cont)
+                    y -= line_height
+            else:
+                wrapped = wrap_text(item, 100)
+                ensure_space(len(wrapped) + 1)
+                c.setFont("Helvetica", 9)
+                c.drawString(left, y, "• " + wrapped[0])
+                y -= line_height
+                for cont in wrapped[1:]:
+                    ensure_space(1)
+                    c.drawString(left + 5 * mm, y, cont)
+                    y -= line_height
+        y -= 2 * mm
+
+    def draw_upgrade_page():
+        nonlocal page_no, y
+        c.showPage()
+        page_no += 1
+        start_page(page_no)
+
+        c.setFont("Helvetica-Bold", 13)
+        c.drawString(left, y, "PRIVATE PILOT — WHAT YOU ARE NOT SEEING IN THIS REPORT")
+        y -= 8 * mm
+
+        c.setFont("Helvetica", 9.5)
+        intro = (
+            "This is the Basic Transparency Report — the version included with the public demo. "
+            "It tells you how the run worked and what was found. It does not tell you what the engine actually knows, "
+            "where that knowledge comes from, or how far its coverage extends."
+        )
+        for line in wrap_text(intro, 105):
+            c.drawString(left, y, line)
             y -= line_height
+
+        y -= 3 * mm
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(left, y, "The Private Pilot transparency report adds:")
+        y -= 6 * mm
+
+        c.setFont("Helvetica", 9.5)
+        bullets = [
+            "Complete rules pack manifest — every covered biomarker class listed by name, not just a total count of findings",
+            "Source guideline citations per biomarker — NCCN, ESMO, FDA companion diagnostic approvals — with exact guideline title, version, and date",
+            "Rules pack version and last-updated date — so reviewers know exactly which guideline vintage the engine reflects",
+            "Explicit exclusion list — what the engine does not check, fully documented: TMB, MSI, co-mutation analysis, quantitative scoring",
+            "Source validation status per rule — citation basis locked, reviewed, and signed off",
+            "Deployment configuration — AI mode, backend provider, and data residency region documented per run",
+            "Organisation-level accountability statement — named deploying organisation and qualified reviewer role on record",
+            "Expanded synonym and edge-case coverage — the private rules pack covers significantly more phrasing variants, abbreviations, and reporting styles than the public demo starter pack",
+        ]
+        for bullet in bullets:
+            wrapped = wrap_text(bullet, 100)
+            c.drawString(left, y, "■ " + wrapped[0])
+            y -= line_height
+            for cont in wrapped[1:]:
+                c.drawString(left + 5 * mm, y, cont)
+                y -= line_height
+
+        y -= 4 * mm
+        footer_blocks = [
+            "Private Pilot deployments are self-hosted. Your data stays inside your own infrastructure. You supply your own API key.",
+            "Access to the private repository is revocable — you pay only while you use it.",
+            "Every pilot includes a signed NDA, a structured 90-day feedback protocol (check-ins at weeks 2, 6, and 12), and a one-time onboarding call.",
+        ]
+        c.setFont("Helvetica", 8.9)
+        for block in footer_blocks:
+            for line in wrap_text(block, 108):
+                c.drawString(left, y, line)
+                y -= line_height
+
+        y -= 5 * mm
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(left, y, "Request a Private Pilot")
+        c.setFont("Helvetica", 10)
+        c.drawString(left + 43 * mm, y, "hello@lippershey.co")
+        y -= 7 * mm
+
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(left, y, "Learn more")
+        c.setFont("Helvetica", 10)
+        c.drawString(left + 43 * mm, y, "standardagentics.ai")
+
+    start_page(page_no)
+    draw_title()
+    for title, items in report["sections"]:
+        draw_section(title, items)
+
+    draw_upgrade_page()
 
     c.save()
     buffer.seek(0)
     return buffer.read()
-
 
 def render_risk_badge(risk_level: str):
     if risk_level == "High":
@@ -798,15 +941,6 @@ if st.session_state.bm_done:
         mime="text/plain"
     )
 
-    transparency_pdf = build_transparency_report_pdf(last_text, findings, table_rows)
-
-    st.download_button(
-        label="Download Transparency & Oversight Report (PDF)",
-        data=transparency_pdf,
-        file_name="biomarker_match_transparency_report.pdf",
-        mime="application/pdf"
-    )
-
     st.subheader("Findings")
     if findings:
         for finding in findings:
@@ -852,6 +986,19 @@ if st.session_state.bm_done:
             render_structured_ai_summary(st.session_state.bm_ai_summary)
     else:
         st.warning(ai_message)
+
+    st.divider()
+    st.subheader("Transparency & oversight")
+    st.caption("Review what systems were used in this run, whether AI was used, what input sources the deterministic engine relied on, and what the current public-demo rules pack actually covers.")
+
+    transparency_pdf = build_transparency_report_pdf(last_text, findings, table_rows, st.session_state.bm_ai_summary)
+
+    st.download_button(
+        label="Download Transparency & Oversight Report (PDF)",
+        data=transparency_pdf,
+        file_name="biomarker_match_transparency_report.pdf",
+        mime="application/pdf"
+    )
 
     st.divider()
     st.subheader("Result Quality Review")
